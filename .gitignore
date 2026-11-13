@@ -1,0 +1,29 @@
+# macOS
+.DS_Store
+
+# Android / Gradle / Kotlin
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Swift / Xcode
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.moved-aside
+.build/
+
+# C# / Visual Studio
+bin/
+obj/
+.vs/
+*.user
+*.suo
+
+# Node (herramientas auxiliares)
+node_modules/
