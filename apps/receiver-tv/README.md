@@ -6,16 +6,16 @@ Receptor **siempre activo**: al encender el TV la app ya escucha, anuncia su ser
 
 ## Stack
 
-- Kotlin + Coroutines + Compose for TV
-- `MediaCodec` (decodificación HW) → `SurfaceView`
-- `NsdManager` (mDNS) · `ForegroundService` (24/7) · DI manual
+- Kotlin + Coroutines + Compose (material3; tv-material cuando haya controles focusables)
+- `MediaCodec` (decodificación HW, modo síncrono en `HandlerThread`) → `SurfaceView`
+- Servidor HTTP propio (sin frameworks) + `ChunkedInputStream` (ffmpeg usa chunked)
 - minSdk 24 · paquete `tv.screenmirror.receiver`
 
 ## Estructura prevista (clean architecture)
 
 ```
 app/src/main/java/tv/screenmirror/receiver/
-├── ui/          # Compose for TV + ReceiverViewModel (StateFlow)
+├── ui/          # Compose (material3) + ReceiverViewModel (StateFlow)
 ├── domain/      # modelos puros + casos de uso + interfaces (sin Android)
 ├── data/        # HttpStreamServer, MdnsAdvertiser, PairingStore
 ├── core/        # VideoPipeline (MediaCodec), Protocol.kt, Result tipado, logging
@@ -36,9 +36,23 @@ ffmpeg -f avfoundation -capture_cursor 1 -i "<index_pantalla>" \
   -g 60 -f h264 "http://<ip-tv>:9471/stream?token=TEST&w=1920&h=1080&fps=30"
 ```
 
+## Estado
+
+**🟢 Fase 1 en curso**: compila, 23 tests en verde, APK debug generado en
+`app/build/outputs/apk/debug/app-debug.apk`.
+
+```bash
+# Instalar en la TV (con depuración USB o red activada)
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+
+# Desde el Mac: prueba de latencia (PIN visible en la pantalla de la TV)
+./scripts/test-stream-mac.sh <ip-tv> <pin>
+```
+
 ## Pendiente
 
-- [ ] Proyecto Gradle
-- [ ] `HttpStreamServer` + `VideoPipeline`
-- [ ] UI de estado (esperando conexión / emitiendo / stats)
-- [ ] mDNS + PIN (fase 2)
+- [x] Proyecto Gradle + tests
+- [x] `HttpStreamServer` + `VideoPipeline` + `AnnexBAccessUnitReader`
+- [x] UI de estado (PIN / recibiendo con stats / detenido)
+- [ ] Prueba en TV real + medición de latencia
+- [ ] mDNS (aparecer solo en la red) — fase 2

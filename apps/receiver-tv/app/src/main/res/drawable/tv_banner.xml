@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Banner de TV provisional (972x540): sustituir por uno definitivo antes de publicar. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="972dp"
+    android:height="540dp"
+    android:viewportWidth="972"
+    android:viewportHeight="540">
+    <path
+        android:fillColor="#0D1117"
+        android:pathData="M0,0h972v540h-972z" />
+    <path
+        android:fillColor="#161B22"
+        android:pathData="M286,120h400v230h-400z" />
+    <path
+        android:fillColor="#3DDC84"
+        android:pathData="M316,150h340v170h-340z" />
+    <path
+        android:fillColor="#8B949E"
+        android:pathData="M446,370h80v16h-80z" />
+    <path
+        android:fillColor="#8B949E"
+        android:pathData="M386,410h200v16h-200z" />
+</vector>
