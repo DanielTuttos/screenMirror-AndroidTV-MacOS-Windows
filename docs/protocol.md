@@ -37,12 +37,14 @@ Respuesta `200 application/json`:
   "proto": 0,
   "name": "TV Salon",
   "id": "uuid",
-  "maxW": 1920,
-  "maxH": 1080,
+  "maxW": 2560,
+  "maxH": 1440,
   "codec": "h264",
   "busy": false
 }
 ```
+
+`maxW`/`maxH` es el **techo absoluto** que acepta el receptor: por encima responde `413`. El emisor debe reducir la resolución hasta encajar (nunca escalar hacia arriba).
 
 #### `POST /pair`
 

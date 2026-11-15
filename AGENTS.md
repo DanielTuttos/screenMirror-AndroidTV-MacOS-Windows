@@ -29,14 +29,14 @@ Pilares:
 
 | Campo | Valor |
 |---|---|
-| Última actualización | 2026-01-13 |
-| Fase | **0 — Infraestructura** ✅ |
-| Siguiente paso | Fase 1: scaffold del receptor Android TV + prueba de latencia con `ffmpeg` |
-| `apps/receiver-tv` | 🟡 estructura planificada, sin código |
-| `apps/sender-macos` | ⚪ no iniciado |
+| Última actualización | 2026-11-14 |
+| Fase | **2 — Descubrimiento + emisor macOS: 🟡 EN CURSO** (mDNS + E2E completos; quedan reconexión, aspect-ratio y polish GUI) |
+| Siguiente paso | Reconexión automática y cambio de resolución/orientación → demo del **modo extendido** con una app de pantalla virtual (ADR-006) → token en Keychain |
+| `apps/receiver-tv` | 🟢 compila · **29 tests en verde** · **validado en TV real** (Riviera 55" TPQ10, `192.168.10.63`, Android 14, MediaTek) · anuncia `_screenmirror._tcp` (verificado con `dns-sd` desde el Mac) · id de dispositivo permanente |
+| `apps/sender-macos` | 🟢 compila · **15 tests en verde** · **E2E validado en la TV real**: `--discover` (mDNS) → PIN → emitir **2560×1440@30fps** → cierre limpio · CLI completo (`--discover --host --pin --token --display --max --fps --seconds`) · GUI de menú de barra con lista de TVs (falta probar a ojo) |
 | `apps/sender-windows` | ⚪ no iniciado |
 | Bloqueos | — |
-| Último aprendido | _(rellenar al final de cada sesión)_ |
+| Último aprendido | `NsdServiceInfo` exige `serviceType` explícito (si no: *"Service type cannot be empty"*), y el mDNS del Mac puede resolver a **IPv6 link-local** `fe80::…%en0`: `URLComponents.host` la rechaza → `ReceiverClient.endpoint()` construye la URL a mano con corchetes y `%25` escapado (**RFC 6874**), verificado con HTTP 200. |
 
 ---
 
@@ -52,6 +52,8 @@ ScreenMirror/
 │   ├── protocol.md           ← spec del protocolo emisor↔receptor (fuente de verdad)
 │   ├── roadmap.md            ← fases con checkboxes
 │   └── decisions.md          ← registro de decisiones (ADR)
+├── scripts/
+│   └── test-stream-mac.sh    ← prueba de latencia: Mac → TV con ffmpeg
 └── apps/
     ├── receiver-tv/          ← Android TV (Kotlin) — receptor
     ├── sender-macos/         ← macOS (Swift) — emisor
@@ -91,7 +93,7 @@ Flujo: `ui → caso de uso → interfaz (domain) → impl (data) → core`.
 
 | App | Lenguaje | Stack | Mín. |
 |---|---|---|---|
-| receiver-tv | Kotlin | Compose for TV + MediaCodec + NsdManager + ForegroundService | Android TV, minSdk 24 |
+| receiver-tv | Kotlin | Compose (material3) + MediaCodec + NsdManager + ForegroundService | Android TV, minSdk 24 |
 | sender-macos | Swift | SwiftUI (menú de barra) + ScreenCaptureKit + VideoToolbox | macOS 13 |
 | sender-windows | C# | .NET 8 + Windows.Graphics.Capture + NVENC (FFmpeg.AutoGen) | Windows 10 1903 |
 
@@ -129,9 +131,9 @@ Flujo: `ui → caso de uso → interfaz (domain) → impl (data) → core`.
 
 ### Kotlin (receptor-tv)
 
-- Kotlin + coroutines; **DI manual** (sin Hilt hasta que duela).
-- Un solo `Activity` (Compose for TV) con `SurfaceView` para el vídeo.
-- `MediaCodec` con callbacks asíncronos en `Handler`/`CoroutineScope` dedicado — **nunca** en el hilo principal.
+- Kotlin + coroutines; **DI manual** (sin Hilt hasta que duela): la raíz es `core/ReceiverContainer`.
+- Un solo `Activity` con **Compose (material3)** y un `SurfaceView` alojado vía `AndroidView`.
+- `MediaCodec` en **modo síncrono sobre un `HandlerThread` dedicado** (más legible que async+cola): nunca en el hilo principal. La red solo encola AUs, jamás bloquea.
 - Foreground service para recibir 24/7 (arranque automático con el TV).
 - Package raíz: `tv.screenmirror.receiver`.
 

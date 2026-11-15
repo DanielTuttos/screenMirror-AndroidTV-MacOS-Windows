@@ -15,36 +15,41 @@
 
 ```
 tv.screenmirror.receiver/
-├── ui/                     # Compose for TV: pantalla de estado, PIN, SurfaceView del vídeo
-│   ├── TvActivity.kt
-│   ├── ReceiverViewModel.kt
-│   └── screens/
-├── domain/                 # puro, sin Android
-│   ├── model/              # PairingSession, StreamRequest, ReceiverState, StreamStats
-│   ├── usecase/            # StartReceiver, PairDevice, OpenStream, CloseStream
-│   └── repository/         # interfaces: PairingRepository, StreamServer, DiscoveryService
-├── data/                   # implementaciones
-│   ├── http/               # HttpStreamServer (raw socket server, parsing HTTP)
-│   ├── mdns/               # MdnsAdvertiser (NsdManager)
-│   ├── pairing/            # PairingStore (PIN + tokens en memoria)
-│   └── prefs/              # configuración
-├── core/
-│   ├── stream/             # VideoPipeline: MediaCodec async → SurfaceView
-│   ├── Protocol.kt         # ÚNICO punto con constantes del protocolo
-│   ├── Result.kt           # errores tipados (sin exceptions silenciadas)
-│   └── logging/
+├── ScreenMirrorApp.kt       # Application: raíz de composición (DI manual)
+├── ui/                      # sin lógica de negocio
+│   ├── MainActivity.kt      # pantalla completa + arranca el servicio
+│   ├── ReceiverViewModel.kt # expone ReceiverState y publica la Surface
+│   └── ReceiverScreen.kt    # SurfaceView + overlay de PIN + HUD de stats
+├── domain/                  # puro, sin Android
+│   ├── Outcome.kt           # Success/Failure tipado (nada de excepciones silenciadas)
+│   ├── ReceiverError.kt     # errores tipados
+│   ├── model/               # ReceiverState, StreamStats, StreamRequest
+│   ├── repository/          # interfaces: PairingRepository, StreamServer
+│   └── runtime/             # interface ReceiverRuntime (fachada de la UI)
+├── data/                    # implementaciones
+│   ├── http/                # HttpStreamServer, HttpRequestParser, ChunkedInputStream,
+│   │                        # HttpResponse, StreamRequestParser
+│   ├── pairing/             # PairingStore (PIN + tokens + rate limit)
+│   └── ReceiverRuntimeImpl.kt
+├── core/                    # infraestructura compartida
+│   ├── Protocol.kt          # ÚNICO punto con constantes del protocolo
+│   ├── VideoSurface.kt      # registro de la Surface (UI → pipeline)
+│   ├── ReceiverContainer.kt # raíz de composición
+│   └── stream/              # VideoPipeline (MediaCodec) + AnnexBAccessUnitReader
 └── service/
-    └── ReceiverService.kt  # foreground service: mantener el receptor vivo 24/7
+    └── ReceiverService.kt   # foreground service: receptor vivo 24/7
 ```
 
-**Hilos**: `ReceiverService` (main) → servidor en hilo/coroutine propio (`Dispatchers.IO`) → `VideoPipeline` con `Handler` de `MediaCodec` dedicado. La UI solo observa `StateFlow`.
+> **Nota (fase 1)**: no existe carpeta `usecase/` — se sigue YAGNI: la UI usa `ReceiverRuntime` como fachada. Se añadirán casos de uso cuando la UI crezca. Tampoco hay `mdns/` ni `prefs/`: llegan en la fase 2.
+
+**Hilos**: `ReceiverService`/UI (main) → servidor en `Dispatchers.IO` → `VideoPipeline` con `HandlerThread` propio. La UI solo observa `StateFlow`.
 
 **Flujo de datos**:
 
 ```
-Red (POST /stream) → HttpStreamServer → domain/OpenStream → VideoPipeline (MediaCodec) → SurfaceView
+Red (POST /stream) → HttpStreamServer → VideoPipeline (MediaCodec) → SurfaceView
                           │
-                          └→ ReceiverViewModel → UI (estado, bitrate, latencia estimada)
+                          └→ ReceiverRuntimeImpl → ReceiverViewModel → UI (estado + stats)
 ```
 
 ## 2. `apps/sender-macos` — macOS (Swift)
