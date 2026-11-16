@@ -15,12 +15,18 @@ object Protocol {
     const val PATH_STATUS = "/status"
     const val PATH_PAIR = "/pair"
     const val PATH_STREAM = "/stream"
+    const val PATH_AUDIO = "/audio"
 
     const val CONTENT_TYPE_ANNEXB = "video/avc; annexb"
+    const val CONTENT_TYPE_PCM = "audio/pcm"
 
     const val DEFAULT_FPS = 30
     const val DEFAULT_KEYINT = 60
     const val DEFAULT_BITRATE_KBPS = 8_000
+
+    const val DEFAULT_SAMPLE_RATE = 48000
+    const val DEFAULT_CHANNELS = 2
+    const val AUDIO_BITS_PER_SAMPLE = 16
 
     const val MIN_WIDTH = 160
     const val MIN_HEIGHT = 90

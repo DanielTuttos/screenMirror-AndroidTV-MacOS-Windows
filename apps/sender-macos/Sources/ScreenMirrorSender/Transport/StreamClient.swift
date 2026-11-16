@@ -14,6 +14,8 @@ final class StreamClient {
 
     private let connection: NWConnection
     private let host: String
+    private let path: String
+    private let contentType: String
     private let queue = DispatchQueue(label: "tv.screenmirror.sender.stream")
     private var continuation: CheckedContinuation<Int, Error>?
     private var headerBuffer = Data()
@@ -23,11 +25,18 @@ final class StreamClient {
     /// Avisos de desconexión (la TV cierra el stream o se cae la red).
     var onDisconnect: ((Error) -> Void)?
 
-    init(host: String, port: UInt16 = Protocol.port) throws {
+    init(
+        host: String,
+        port: UInt16 = Protocol.port,
+        path: String = Protocol.pathStream,
+        contentType: String = Protocol.contentTypeAnnexB,
+    ) throws {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
             throw SenderError.connectionFailed("puerto inválido: \(port)")
         }
         self.host = host
+        self.path = path
+        self.contentType = contentType
         connection = NWConnection(
             host: NWEndpoint.Host(host),
             port: nwPort,
@@ -40,9 +49,9 @@ final class StreamClient {
     func open(query: String) async throws -> Int {
         // Últimos dos elementos vacíos = el \r\n final que separa cabeceras de cuerpo.
         let head = [
-            "POST \(Protocol.pathStream)?\(query) HTTP/1.1",
+            "POST \(path)?\(query) HTTP/1.1",
             "Host: \(host):\(Protocol.port)",
-            "Content-Type: \(Protocol.contentTypeAnnexB)",
+            "Content-Type: \(contentType)",
             "Transfer-Encoding: chunked",
             "Connection: close",
             "",
@@ -69,11 +78,11 @@ final class StreamClient {
         }
     }
 
-    /// Envía un access unit (H.264 Annex-B) como un chunk HTTP.
-    func send(_ accessUnit: Data) {
+    /// Envía un chunk del cuerpo (access unit H.264 o bloque PCM) como chunk HTTP.
+    func send(_ bytes: Data) {
         guard !isFinished else { return }
-        var chunk = Data("\(String(accessUnit.count, radix: 16))\r\n".utf8)
-        chunk.append(accessUnit)
+        var chunk = Data("\(String(bytes.count, radix: 16))\r\n".utf8)
+        chunk.append(bytes)
         chunk.append(Constants.crlf)
         connection.send(content: chunk, completion: .contentProcessed { [weak self] error in
             if let error { self?.fail(error) }

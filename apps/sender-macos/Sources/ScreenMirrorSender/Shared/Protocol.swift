@@ -12,12 +12,18 @@ enum Protocol {
     static let pathStatus = "/status"
     static let pathPair = "/pair"
     static let pathStream = "/stream"
+    static let pathAudio = "/audio"
 
     static let contentTypeAnnexB = "video/avc; annexb"
+    static let contentTypePcm = "audio/pcm"
 
     static let defaultFps = 30
     static let defaultKeyint = 60
     static let defaultBitrateKbps = 8_000
+
+    static let defaultSampleRate = 48000
+    static let defaultChannels = 2
+    static let audioBitsPerSample = 16
 
     static let pinLength = 6
 }

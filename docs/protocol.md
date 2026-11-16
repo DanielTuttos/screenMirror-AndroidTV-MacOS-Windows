@@ -73,7 +73,25 @@ Headers: `Content-Type: video/avc; annexb`
 **Body**: stream **H.264 Annex-B** continuo (SPS/PPS inline antes de cada IDR, IDR cada `keyint` frames).
 
 Respuesta inmediata `200` con cuerpo vacío; el stream sigue hasta que el emisor cierra la conexión.
-Si la TV ya está emitiendo → `409 {"error":"busy"}`.
+Si la TV ya está emitiendo vídeo → `409 {"error":"busy"}`.
+
+#### `POST /audio`
+
+Query params:
+
+| Param | Obligatorio | Default | Descripción |
+|---|---|---|---|
+| `token` | ✅ | — | token de /pair |
+| `sr` | ❌ | `48000` | sample rate (Hz): 44100 o 48000 |
+| `ch` | ❌ | `2` | canales: 1 (mono) o 2 (estéreo) |
+
+Headers: `Content-Type: audio/pcm`
+
+**Body**: stream **PCM raw 16-bit little-endian** continuo.
+
+Respuesta inmediata `200` con cuerpo vacío; el stream sigue hasta que el emisor cierra la conexión.
+Es una conexión TCP concurrente e independiente de `/stream`. Si no se conecta `/audio`, el receptor reproduce solo vídeo.
+Si la TV ya tiene una sesión de audio activa → `409 {"error":"busy"}`.
 
 #### `DELETE /stream?token=...`
 

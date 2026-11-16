@@ -24,6 +24,8 @@ final class StreamSession {
     private let capture = ScreenCaptureHandler()
     private var encoder: H264Encoder?
     private var streamClient: StreamClient?
+    private var audioClient: StreamClient?
+    private let audioConverter = PCMAudioConverter()
     private var stats = Stats()
     private var statsStartedAt: CMTime?
     private let statsQueue = DispatchQueue(label: "tv.screenmirror.sender.stats")
@@ -38,6 +40,7 @@ final class StreamSession {
     /// Lanza el stream. `displayID` = pantalla a capturar: la principal es *espejo*,
     /// cualquier otra es *extender* (ADR-006). El receptor ya conoce su techo por `/status`.
     /// `cap` permite forzar un techo por debajo del del receptor (para tests A/B de nitidez).
+    /// `withAudio` abre además `POST /audio` con el PCM del sistema (spec: docs/protocol.md).
     @MainActor
     func start(
         host: String,
@@ -45,6 +48,7 @@ final class StreamSession {
         displayID: CGDirectDisplayID,
         fps: Int = Protocol.defaultFps,
         cap: (width: Int, height: Int)? = nil,
+        withAudio: Bool = true,
     ) async throws {
         let status = try await receiverClient.fetchStatus(host: host)
 
@@ -65,9 +69,21 @@ final class StreamSession {
         // lo sabemos antes de arrancar la captura.
         _ = try await streamClient.open(query: config.query(token: token))
 
+        // El audio es opcional por spec: si la sesión de audio no abre (409 por una sesión
+        // colgada, red…), seguimos con vídeo solo en lugar de abortar la emisión.
+        var audioClient: StreamClient?
+        if withAudio {
+            do {
+                audioClient = try await openAudio(host: host, token: token)
+            } catch {
+                print("⚠ Audio no disponible (\(error.localizedDescription)): emitimos solo vídeo")
+            }
+        }
+
         self.encoder = encoder
         self.streamClient = streamClient
-        wireCallbacks(encoder: encoder, streamClient: streamClient, capture: capture)
+        self.audioClient = audioClient
+        wireCallbacks(encoder: encoder, streamClient: streamClient, capture: capture, audioClient: audioClient)
 
         do {
             try await capture.start(displayID: displayID, width: config.width, height: config.height, fps: fps)
@@ -89,7 +105,16 @@ final class StreamSession {
 
     // MARK: - Privado
 
-    private func wireCallbacks(encoder: H264Encoder, streamClient: StreamClient, capture: ScreenCaptureHandler) {
+    /// Abre `POST /audio` con el formato PCM real de la salida del sistema (spec: docs/protocol.md).
+    private func openAudio(host: String, token: String) async throws -> StreamClient {
+        let format = SystemAudioFormat.current()
+        let client = try StreamClient(host: host, path: Protocol.pathAudio, contentType: Protocol.contentTypePcm)
+        let query = "token=\(token)&sr=\(format.sampleRate)&ch=\(format.channels)"
+        _ = try await client.open(query: query)
+        return client
+    }
+
+    private func wireCallbacks(encoder: H264Encoder, streamClient: StreamClient, capture: ScreenCaptureHandler, audioClient: StreamClient?) {
         capture.onFrame = { [weak self] sampleBuffer in
             guard let self, let encoder = self.encoder else { return }
             let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
@@ -100,6 +125,13 @@ final class StreamSession {
         }
         capture.onError = { [weak self] error in
             self?.fail(with: error)
+        }
+        capture.onAudio = { [weak self] sampleBuffer in
+            guard let self, let audioClient = self.audioClient else { return }
+            // Conversión en la cola de captura (no en main): el PCM ya sale en el formato del protocolo.
+            if let pcm = self.audioConverter.convert(sampleBuffer) {
+                audioClient.send(pcm)
+            }
         }
         encoder.onAccessUnit = { [weak self] accessUnit in
             self?.streamClient?.send(accessUnit)
@@ -115,6 +147,7 @@ final class StreamSession {
 
     private func teardown() async {
         capture.onFrame = nil
+        capture.onAudio = nil
         capture.onError = nil
         encoder?.onAccessUnit = nil
         encoder?.onError = nil
@@ -122,13 +155,17 @@ final class StreamSession {
         let capture = capture
         let encoder = encoder
         let streamClient = streamClient
+        let audioClient = audioClient
         self.encoder = nil
         self.streamClient = nil
+        self.audioClient = nil
 
         // Los callbacks ya están desenganchados: el estado se informó en `stop()`/`fail(with:)`,
         // así que un fallo al detener la captura no cambia nada para quien nos escucha.
         try? await capture.stop()
         encoder?.finish()
+        // Audio primero: es la conexión más reciente y su cierre no debe esperar al vídeo.
+        await audioClient?.close()
         await streamClient?.close()
     }
 

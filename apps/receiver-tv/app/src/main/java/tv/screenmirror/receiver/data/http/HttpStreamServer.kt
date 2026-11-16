@@ -13,6 +13,7 @@ import org.json.JSONException
 import org.json.JSONObject
 import tv.screenmirror.receiver.core.Protocol
 import tv.screenmirror.receiver.core.stream.AnnexBAccessUnitReader
+import tv.screenmirror.receiver.core.stream.AudioPipeline
 import tv.screenmirror.receiver.core.stream.VideoPipeline
 import tv.screenmirror.receiver.domain.Outcome
 import tv.screenmirror.receiver.domain.ReceiverError
@@ -36,6 +37,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class HttpStreamServer(
     private val pairing: PairingRepository,
     private val pipeline: VideoPipeline,
+    private val audioPipeline: AudioPipeline = AudioPipeline(),
     private val receiverId: String = UUID.randomUUID().toString(),
     private val port: Int = Protocol.PORT,
 ) : StreamServer {
@@ -43,6 +45,7 @@ class HttpStreamServer(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val started = AtomicBoolean(false)
     private val streaming = AtomicBoolean(false)
+    private val audioStreaming = AtomicBoolean(false)
 
     @Volatile
     private var serverSocket: ServerSocket? = null
@@ -85,6 +88,7 @@ class HttpStreamServer(
     override fun stop() {
         started.set(false)
         runCatching { activeStreamSocket?.close() }
+        runCatching { audioPipeline.stop() }
         runCatching { serverSocket?.close() }
     }
 
@@ -122,6 +126,9 @@ class HttpStreamServer(
 
             request.method == "POST" && request.path == Protocol.PATH_STREAM ->
                 handleStream(request, input, output, socket)
+
+            request.method == "POST" && request.path == Protocol.PATH_AUDIO ->
+                handleAudio(request, input, output, socket)
 
             request.method == "DELETE" && request.path == Protocol.PATH_STREAM ->
                 handleDelete(request, output)
@@ -221,6 +228,71 @@ class HttpStreamServer(
             for (accessUnit in reader.feed(buffer, read)) {
                 pipeline.feedAccessUnit(accessUnit)
             }
+        }
+    }
+
+    /**
+     * `POST /audio`: sesión concurrente e independiente del vídeo (spec: docs/protocol.md).
+     * El cuerpo PCM va directo al AudioTrack; el cierre de conexión termina la sesión.
+     */
+    private fun handleAudio(request: HttpRequest, input: InputStream, output: OutputStream, socket: Socket) {
+        expect100Continue(request, output)
+
+        val parsed = when (val result = AudioRequestParser.parse(request.query)) {
+            is Outcome.Failure -> return HttpResponse.error(output, result.error)
+            is Outcome.Success -> result.value
+        }
+        if (!pairing.isValidToken(parsed.token)) {
+            return HttpResponse.error(output, ReceiverError.InvalidToken)
+        }
+        if (!audioStreaming.compareAndSet(false, true)) {
+            return HttpResponse.error(output, ReceiverError.StreamBusy)
+        }
+
+        when (val startedAudio = audioPipeline.start(parsed)) {
+            is Outcome.Failure -> {
+                audioStreaming.set(false)
+                return HttpResponse.error(output, startedAudio.error)
+            }
+            is Outcome.Success -> Unit
+        }
+
+        try {
+            HttpResponse.streamOk(output)
+            pumpAudio(request, input, socket)
+        } finally {
+            audioStreaming.set(false)
+            audioPipeline.stop()
+        }
+    }
+
+    /** Copia el cuerpo PCM al AudioTrack hasta EOF, cancelación o timeout del emisor. */
+    private fun pumpAudio(request: HttpRequest, input: InputStream, socket: Socket) {
+        val body: InputStream = when {
+            request.isChunked -> ChunkedInputStream(input)
+            request.contentLength > 0 -> LimitedInputStream(input, request.contentLength.toLong())
+            else -> input
+        }
+        socket.soTimeout = IDLE_TIMEOUT_MS
+
+        val buffer = ByteArray(READ_BUFFER_BYTES)
+        var idleReads = 0
+
+        while (audioPipeline.isRunning()) {
+            val read = try {
+                body.read(buffer)
+            } catch (e: SocketTimeoutException) {
+                idleReads++
+                if (idleReads >= MAX_IDLE_READS) {
+                    Log.w(TAG, "Emisor de audio inactivo: cierro la sesión de audio")
+                    break
+                }
+                continue
+            }
+            idleReads = 0
+            if (read < 0) break
+
+            audioPipeline.writePcm(buffer, 0, read)
         }
     }
 

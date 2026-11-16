@@ -35,9 +35,10 @@ Objetivo: validar **antes de invertir más** que la latencia es aceptable.
 
 - [x] Anuncio **mDNS** (`_screenmirror._tcp`) en el receptor (NsdManager, TXT `v=0 id=… pin=true name=…`) + emparejamiento **PIN**
 - [x] `sender-macos`: ScreenCaptureKit → VideoToolbox → `POST /stream` (CLI `--cli`, validado E2E en la TV real)
-- [x] Selector de pantalla con modo *espejo* / *extender* (ADR-006): captura la display que se elija (CLI: `--display`; GUI: lista de displays)
+- [x] Selector de pantalla con modo *espejo* / *extender* (ADR-006): captura la display que se elija (CLI: `--display`; GUI: lista de displays) → **validado con BetterDisplay** (escritorio vacío en la TV)
 - [x] Validar **2560×1440** en la TV real y decidir la resolución por defecto (ADR-007) → **ganó 1440p** (A/B con texto fino + `composition=DEVICE` al panel 4K)
 - [x] Detección automática de la TV en la red — **lado emisor**: `ReceiverBrowser` (NWBrowser) + CLI `--discover`; E2E completo descubrir → emparejar → emitir sobre la IPv6 resuelta (falta enchufarlo a la GUI)
+- [x] **Audio al TV** (ADR-008): `POST /audio` con PCM s16le 48 kHz · emisor `SCStream(capturesAudio)` · receptor `AudioTrack` → **validado E2E en la TV real** (25 s, 1,24 M muestras, sonido escuchado). Pendiente solo `sender-windows`
 - [ ] Reconexión automática y cambio de resolución/orientación
 - [ ] GUI del emisor: lista de TVs descubiertas + PIN + displays (hoy todo es CLI)
 
@@ -61,7 +62,7 @@ Objetivo: validar **antes de invertir más** que la latencia es aceptable.
 ## Fase 3 — Emisor Windows + audio (1–2 meses)
 
 - [ ] `sender-windows`: Windows.Graphics.Capture + NVENC
-- [ ] Audio: loopback (WASAPI en Windows, CoreAudio en macOS) → reproduce la TV
+- [x] Audio en macOS + receptor (ADR-008, fase 2) — queda el loopback de Windows (WASAPI)
 - [ ] Control de calidad (bitrate adaptativo) y reintentos
 - [ ] Emparejamiento con QR para no teclear el PIN
 

@@ -47,6 +47,7 @@ Nueva entrada al final; no borrar las anteriores (a menos que se revoque, indic�
 - **Contexto**: el usuario quiere **extender** el escritorio (dejar contenido en la TV y seguir trabajando en el Mac), no solo duplicarlo. Extender exige una **segunda pantalla** en el macOS, y **no existe API pública de macOS para crear pantallas virtuales**; solo API privada (`CGVirtualDisplay*`, no expuesta ni siquiera como símbolo en esta versión de macOS), hardware (clavija dummy, monitor) o software de terceros.
 - **Decisión**: el emisor tendrá un **selector de pantalla** (enumera las displays con `SCShareableContent` y captura la que se elija) con dos modos: *espejo* (pantalla principal) y *extender* (cualquier otra display). La **segunda pantalla la aporta el usuario** con una app de terceros tipo BetterDisplay/MacVirtualDisplay, un monitor o una clavija dummy. **No integramos API privada** en el proyecto.
 - **Consecuencias**: el mismo código sirve para las 3 fuentes de pantalla; coste 0 si ya se tiene hardware; el usuario instala la app que prefiera (único paso manual); si algún día Apple publica una API, se puede sustituir sin tocar el protocolo.
+- **Resolución (2026-11-15, validado)**: probado con **BetterDisplay 5.2.1** (cask de Homebrew, capa gratuita crea pantallas virtuales por CLI: `betterdisplaycli create -type=VirtualScreen …`). Emitiendo la display virtual a la TV se ve un **escritorio vacío en la TV** = modo extendido real (no espejo). El selector `--display <id>` del emisor captura cualquier display sin cambios de código (ADR-006 sin deuda pendiente).
 
 ## ADR-007 — Resolución del stream: techo en 2560×1440
 
@@ -55,3 +56,15 @@ Nueva entrada al final; no borrar las anteriores (a menos que se revoque, indic�
 - **Decisión**: subir el techo del receptor a **2560×1440** (resolución objetivo del escritorio extendido) y **no prometer 4K**. La posible ganancia por encima de 1080p depende de que la capa de vídeo vaya a **plano de hardware** en vez de componerse en el framebuffer de 1080p: se validará **a ojo con texto fino** antes de fijar la resolución por defecto.
 - **Consecuencias**: el protocolo admite hasta 1440p (`maxW`/`maxH` en `/status`); si la TV compone todo a 1080p, se vuelve a 1920×1080 para no gastar CPU y ancho de banda en vano (regla *latencia > features*).
 - **Resolución (2026-11-14, validado)**: **A/B a ojo con texto fino (8–12 px) en la TV real → 2560×1440 se lee claramente mejor que 1920×1080.** Confirmado además en `dumpsys SurfaceFlinger`: la capa de vídeo reporta `composition=DEVICE` con `sourceCrop=[0 0 2560 1440]` y `displayFrame=[0 0 3840 2160]`, o sea que va a **plano de hardware** y el escalador del panel la sube a 4K desde 1440p, saltándose el techo de composición de 1080p. **El emisor usa la resolución nativa de la display (hasta 2560×1440) por defecto.**
+
+## ADR-008 — Audio: PCM crudo en un endpoint aparte (no dentro del vídeo)
+
+- **Fecha**: 2026-11-15
+- **Contexto**: falta transmitir el sonido del Mac a la TV. Opciones: (a) AAC/Opus multiplexado en el mismo stream HTTP, (b) WebRTC completo, (c) un segundo endpoint HTTP con PCM crudo.
+- **Decisión**: **`POST /audio` concurrente con `/stream`**, cuerpo **PCM s16le 48 kHz estéreo** (lo que fija `SystemAudioFormat` del emisor). El emisor usa `ScreenCaptureKit` con `capturesAudio`; el receptor escribe directo a `AudioTrack`.
+- **Consecuencias**:
+  - Latencia de audio añadida ≈ buffer del AudioTrack (~60 ms) — imperceptible y dentro del techo de 300 ms.
+  - Cero CPU de códec en ambos extremos (regla *latencia > features*); ~1,5 Mbps, despreciable en LAN.
+  - El audio es **opcional por spec**: si `/audio` no abre (409, red), el emisor sigue emitiendo solo vídeo.
+  - Dos conexiones TCP en vez de una; el servidor ya servía conexiones concurrentes, así que el coste es cero.
+  - Si algún día se necesita reducir ancho de banda o sincronizar A/V con precisión, se cambia a AAC con timestamp en v1 (no rompe la spec si se añade un `codec=` al query).

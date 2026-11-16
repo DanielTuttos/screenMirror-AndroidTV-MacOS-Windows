@@ -63,6 +63,7 @@ enum CLIStreamer {
                 displayID: displayID,
                 fps: arguments.fps,
                 cap: arguments.cap,
+                withAudio: arguments.audio,
             )
             await wait(seconds: arguments.seconds)
             await session.stop()
@@ -148,6 +149,7 @@ enum CLIStreamer {
           --display <sel>    main (por defecto) | índice de la lista | id de display
           --max <WxH>        techo de resolución (p. ej. 1920x1080 para el A/B de nitidez)
           --fps <n>          frames por segundo (por defecto 30)
+          --no-audio         no enviar el sonido al TV (por defecto se envía)
           --seconds <n>      duración en segundos (por defecto: hasta Ctrl+C)
         """)
     }
@@ -163,6 +165,8 @@ enum CLIStreamer {
         let cap: (width: Int, height: Int)?
         /// Modo descubrimiento: listar las TVs de la red y salir.
         let discover: Bool
+        /// Emitir también el sonido (`POST /audio`); desactivable con `--no-audio`.
+        let audio: Bool
 
         init(_ args: [String]) {
             func value(_ flag: String) -> String? {
@@ -177,6 +181,7 @@ enum CLIStreamer {
             seconds = Int(value("--seconds") ?? "") ?? 0
             cap = Self.parseCap(value("--max"))
             discover = args.contains("--discover")
+            audio = !args.contains("--no-audio")
         }
 
         private static func parseCap(_ raw: String?) -> (width: Int, height: Int)? {
