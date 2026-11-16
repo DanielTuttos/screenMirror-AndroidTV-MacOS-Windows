@@ -29,14 +29,14 @@ Pilares:
 
 | Campo | Valor |
 |---|---|
-| Última actualización | 2026-11-14 |
-| Fase | **2 — Descubrimiento + emisor macOS: 🟡 EN CURSO** (mDNS + E2E completos; quedan reconexión, aspect-ratio y polish GUI) |
-| Siguiente paso | Reconexión automática y cambio de resolución/orientación → demo del **modo extendido** con una app de pantalla virtual (ADR-006) → token en Keychain |
-| `apps/receiver-tv` | 🟢 compila · **29 tests en verde** · **validado en TV real** (Riviera 55" TPQ10, `192.168.10.63`, Android 14, MediaTek) · anuncia `_screenmirror._tcp` (verificado con `dns-sd` desde el Mac) · id de dispositivo permanente |
-| `apps/sender-macos` | 🟢 compila · **15 tests en verde** · **E2E validado en la TV real**: `--discover` (mDNS) → PIN → emitir **2560×1440@30fps** → cierre limpio · CLI completo (`--discover --host --pin --token --display --max --fps --seconds`) · GUI de menú de barra con lista de TVs (falta probar a ojo) |
+| Última actualización | 2026-11-16 |
+| Fase | **2 — Descubrimiento + emisor macOS: 🟡 EN CURSO** (mDNS, audio, reconexión y pantalla virtual propia completos y validados en TV; queda la GUI del menú de barra) |
+| Siguiente paso | GUI del emisor (lista de TVs + PIN + displays + botón pantalla virtual) → token en Keychain → `sender-windows` |
+| `apps/receiver-tv` | 🟢 compila · **40 tests en verde** · **validado en TV real** (Riviera 55" TPQ10, `192.168.10.63`, Android 14, MediaTek) · anuncia `_screenmirror._tcp` · id de dispositivo permanente · **tokens persistidos en SharedPreferences** (sobreviven a muerte del proceso) |
+| `apps/sender-macos` | 🟢 compila · **19 tests en verde** · **E2E en TV real**: `--discover` (mDNS) → PIN → vídeo **2560×1440@30fps** + **audio PCM** (`--no-audio` para desactivar) · **pantalla virtual propia** `--virtual [WxH]` (sin BetterDisplay, desinstalado) · **reconexión** con backoff 0.5→5 s + cambio de resolución en caliente re-emitiendo · CLI completa |
 | `apps/sender-windows` | ⚪ no iniciado |
 | Bloqueos | — |
-| Último aprendido | `NsdServiceInfo` exige `serviceType` explícito (si no: *"Service type cannot be empty"*), y el mDNS del Mac puede resolver a **IPv6 link-local** `fe80::…%en0`: `URLComponents.host` la rechaza → `ReceiverClient.endpoint()` construye la URL a mano con corchetes y `%25` escapado (**RFC 6874**), verificado con HTTP 200. |
+| Último aprendido | `CGDisplayRegisterReconfigurationCallback` **no se propaga entre procesos**: los cambios de resolución hechos por otros nunca llegan al callback → `DisplayWatcher` combina callback (cambios propios) + polling de `CGDisplayBounds` cada 2 s. Y `CGDisplaySetDisplayMode` revierte al salir el proceso que lo aplica. |
 
 ---
 

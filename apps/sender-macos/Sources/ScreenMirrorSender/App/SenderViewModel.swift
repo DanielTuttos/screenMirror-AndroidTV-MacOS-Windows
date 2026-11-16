@@ -35,6 +35,10 @@ final class SenderViewModel: ObservableObject {
                 case .streaming:
                     self.isStreaming = true
                     self.errorText = nil
+                case .reconnecting(let reason):
+                    // Sigue "emitendo": el botón debe seguir ofreciendo detener.
+                    self.isStreaming = true
+                    self.statsText = "Reconectando… (\(reason))"
                 case .stopped:
                     self.isStreaming = false
                     self.statsText = nil

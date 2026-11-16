@@ -35,12 +35,12 @@ Objetivo: validar **antes de invertir más** que la latencia es aceptable.
 
 - [x] Anuncio **mDNS** (`_screenmirror._tcp`) en el receptor (NsdManager, TXT `v=0 id=… pin=true name=…`) + emparejamiento **PIN**
 - [x] `sender-macos`: ScreenCaptureKit → VideoToolbox → `POST /stream` (CLI `--cli`, validado E2E en la TV real)
-- [x] Selector de pantalla con modo *espejo* / *extender* (ADR-006): captura la display que se elija (CLI: `--display`; GUI: lista de displays) → **validado con BetterDisplay** (escritorio vacío en la TV)
+- [x] Selector de pantalla con modo *espejo* / *extender* (ADR-006): captura la display que se elija (CLI: `--display`; GUI: lista de displays) → **pantalla virtual propia** (`--virtual [WxH]`, `CGVirtualDisplay*` vía shim, BetterDisplay eliminado) → **validado E2E en la TV real** (escritorio vacío)
 - [x] Validar **2560×1440** en la TV real y decidir la resolución por defecto (ADR-007) → **ganó 1440p** (A/B con texto fino + `composition=DEVICE` al panel 4K)
 - [x] Detección automática de la TV en la red — **lado emisor**: `ReceiverBrowser` (NWBrowser) + CLI `--discover`; E2E completo descubrir → emparejar → emitir sobre la IPv6 resuelta (falta enchufarlo a la GUI)
 - [x] **Audio al TV** (ADR-008): `POST /audio` con PCM s16le 48 kHz · emisor `SCStream(capturesAudio)` · receptor `AudioTrack` → **validado E2E en la TV real** (25 s, 1,24 M muestras, sonido escuchado). Pendiente solo `sender-windows`
-- [ ] Reconexión automática y cambio de resolución/orientación
-- [ ] GUI del emisor: lista de TVs descubiertas + PIN + displays (hoy todo es CLI)
+- [x] **Reconexión automática y cambio de resolución/orientación** (ADR-009): backoff 0.5→5 s + tokens persistidos + `DisplayWatcher` (callback CG + polling 2 s) → **validado E2E en la TV real**: receptor matado/relanzado reconectó sin re-parear; cambio 1440p→1080p→1440p re-emitió en cada paso
+- [ ] GUI del emisor: lista de TVs descubiertas + PIN + displays + botón "pantalla virtual" (hoy todo es CLI)
 
 **Criterio de éxito**: abrir el emisor en el Mac → aparece la TV → PIN → espejo funcionando. Y con una 2ª pantalla disponible → extender.
 
@@ -51,6 +51,14 @@ Objetivo: validar **antes de invertir más** que la latencia es aceptable.
 - Esa misma propiedad limita `wm size`: cualquier ancho > 1920 se **escala proporcionalmente** (2560×1440 → 1920×1080, 1936×1080 → 1920×1071). `wm size reset` vuelve siempre a 1920×1080.
 - **Vía abierta → RESUELTA**: la capa de vídeo reporta `forceClientComposition=false` y `displayFrame=[0 0 3840 2160]`, o sea que va a **plano de hardware**. Confirmado con un stream a 1440p: `composition=DEVICE`, `sourceCrop=[0 0 2560 1440]` → el escalador del panel sube a 4K desde 1440p. **A/B visual con texto fino (2026-11-14): 1440p se lee mejor que 1080p** → 1440p es la resolución por defecto.
 - `screencap` devuelve siempre la resolución **lógica** (1920×1080): sirve para leer la UI, no para medir nitidez del panel.
+
+### Hallazgos de displays virtuales y reconexión (2026-11-16)
+
+- **`CGDisplayRegisterReconfigurationCallback` no se propaga entre procesos**: un cambio de resolución hecho por otro proceso (Ajustes, otra app, `CGDisplaySetDisplayMode` externo) **nunca** llega al callback registrado en el emisor. Verificado con un test propio (proceso dueño de la display vs. proceso externo). Por eso `DisplayWatcher` combina el callback (cambios propios, inmediatos) con **polling de `CGDisplayBounds` cada 2 s** (cambios externos).
+- `CGDisplaySetDisplayMode` **revierte al salir el proceso que lo aplicó** ("persists for the life of the program"): para probar un cambio en caliente hay que mantener vivo el proceso que cambia el modo.
+- API privada `CGVirtualDisplay*`: las 4 clases existen en el runtime (`NSClassFromString` las ve) pero **no están en los headers del SDK** → shim ObjC con solo declaraciones (derivable de DeskPad, MIT). `swift build` las resuelve enlazando contra CoreGraphics.
+- Las displays virtuales BetterDisplay/propresas **se recrean con id nueva** cada aparición: el selector `--display` debe leer la lista fresca, no memorizar ids.
+- `CGDisplayCopyAllDisplayModes`/`CGDisplaySetDisplayMode` (no "AllModes"/"SetMode") y en Swift las props `mode.width`/`mode.height` (las funciones `CGDisplayModeGetWidth` están obsoletas desde Swift 3).
 
 ### Hallazgos de descubrimiento mDNS (2026-11-14)
 

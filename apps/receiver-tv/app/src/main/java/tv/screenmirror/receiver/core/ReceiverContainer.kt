@@ -7,6 +7,7 @@ import tv.screenmirror.receiver.data.discovery.NsdServiceAdvertiser
 import tv.screenmirror.receiver.data.discovery.ServiceRecords
 import tv.screenmirror.receiver.data.http.HttpStreamServer
 import tv.screenmirror.receiver.data.identity.DeviceIdentity
+import tv.screenmirror.receiver.data.pairing.SharedPreferencesTokenStorage
 import tv.screenmirror.receiver.data.pairing.PairingStore
 import tv.screenmirror.receiver.core.stream.VideoPipeline
 import tv.screenmirror.receiver.domain.discovery.DiscoveryAdvertiser
@@ -20,7 +21,7 @@ import tv.screenmirror.receiver.domain.runtime.ReceiverRuntime
 class ReceiverContainer(context: Context) {
     val videoSurface = VideoSurface()
 
-    val pairing: PairingRepository = PairingStore()
+    val pairing: PairingRepository = PairingStore(storage = SharedPreferencesTokenStorage(context))
 
     private val identity = DeviceIdentity(context)
     private val pipeline = VideoPipeline(videoSurface)

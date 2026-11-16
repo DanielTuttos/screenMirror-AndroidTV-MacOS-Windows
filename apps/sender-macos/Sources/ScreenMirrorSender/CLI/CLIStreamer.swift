@@ -37,8 +37,17 @@ enum CLIStreamer {
             let status = try await receiver.fetchStatus(host: host)
             print("==> \(status.name): máximo \(status.maxW)x\(status.maxH)\(status.busy ? " · ocupada" : "")")
 
+            // La pantalla virtual debe vivir mientras se emite: se crea antes de
+            // enumerar displays y se libera al salir del scope.
+            var virtualDisplay: VirtualDisplay?
+            if let size = arguments.virtual {
+                virtualDisplay = try VirtualDisplay(name: "ScreenMirror", modes: Self.virtualModes(size))
+                print("==> Pantalla virtual \(size.width)x\(size.height) creada (id \(virtualDisplay!.displayID))")
+            }
+
             let displays = try await ScreenCaptureHandler.availableDisplays()
-            let displayID = try await selectDisplay(from: displays, selector: arguments.display)
+            let selector = virtualDisplay.map { String($0.displayID) } ?? arguments.display
+            let displayID = try await selectDisplay(from: displays, selector: selector)
 
             let session = StreamSession()
             session.onStateChange = { state in
@@ -46,6 +55,8 @@ enum CLIStreamer {
                 case .streaming(let config):
                     print("==> Emitiendo \(config.width)x\(config.height) @ \(config.fps) fps · \(config.bitrateKbps) kbps")
                     print("    (Ctrl+C para cortar)")
+                case .reconnecting(let reason):
+                    print("\n==> Reconectando… (\(reason))")
                 case .stopped(let reason):
                     print("\n==> \(reason)")
                 case .idle:
@@ -102,6 +113,17 @@ enum CLIStreamer {
         return 0
     }
 
+    /// Modos que ofrece la pantalla virtual: el pedido + el resto de la lista
+    /// (así el usuario puede cambiar de resolución en Ajustes y el DisplayWatcher reacciona).
+    private static func virtualModes(_ size: (width: Int, height: Int)) -> [(width: Int, height: Int)] {
+        let common = [(2560, 1440), (1920, 1080), (1600, 900), (1280, 720)]
+        var modes = [size]
+        for mode in common where mode != size {
+            modes.append(mode)
+        }
+        return modes
+    }
+
     private static func selectDisplay(from displays: [DisplayDescriptor], selector: String) async throws -> CGDirectDisplayID {
         print("Pantallas disponibles:")
         for (index, display) in displays.enumerated() {
@@ -147,6 +169,7 @@ enum CLIStreamer {
           --pin <6 dígitos>   emparejar con el PIN que muestra la TV
           --token <hex>      usar un token ya emitido (salta el PIN)
           --display <sel>    main (por defecto) | índice de la lista | id de display
+          --virtual [WxH]    crea una pantalla virtual propia (modo extendido, por defecto 2560x1440) y la emite
           --max <WxH>        techo de resolución (p. ej. 1920x1080 para el A/B de nitidez)
           --fps <n>          frames por segundo (por defecto 30)
           --no-audio         no enviar el sonido al TV (por defecto se envía)
@@ -167,6 +190,8 @@ enum CLIStreamer {
         let discover: Bool
         /// Emitir también el sonido (`POST /audio`); desactivable con `--no-audio`.
         let audio: Bool
+        /// Crea una pantalla virtual propia (modo extendido sin BetterDisplay) con este tamaño.
+        let virtual: (width: Int, height: Int)?
 
         init(_ args: [String]) {
             func value(_ flag: String) -> String? {
@@ -182,6 +207,10 @@ enum CLIStreamer {
             cap = Self.parseCap(value("--max"))
             discover = args.contains("--discover")
             audio = !args.contains("--no-audio")
+            // Solo crea pantalla virtual si se pide el flag; sin tamaño, 2560x1440.
+            virtual = args.contains("--virtual")
+                ? (Self.parseCap(value("--virtual")) ?? (2560, 1440))
+                : nil
         }
 
         private static func parseCap(_ raw: String?) -> (width: Int, height: Int)? {

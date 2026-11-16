@@ -17,7 +17,19 @@ final class StreamSession {
     enum State: Equatable {
         case idle
         case streaming(StreamConfig)
+        /// La sesión cayó (o cambió la display) y se está reintentando con backoff.
+        case reconnecting(String)
         case stopped(String)
+    }
+
+    /// Parámetros de la sesión en curso: con ellos se reabre el stream tras una caída.
+    private struct SessionParams {
+        let host: String
+        let token: String
+        let displayID: CGDirectDisplayID
+        let fps: Int
+        let cap: (width: Int, height: Int)?
+        let withAudio: Bool
     }
 
     private let receiverClient: ReceiverClient
@@ -30,6 +42,13 @@ final class StreamSession {
     private var statsStartedAt: CMTime?
     private let statsQueue = DispatchQueue(label: "tv.screenmirror.sender.stats")
 
+    /// true mientras la sesión *debería* estar viva (hasta `stop()` o un fallo fatal).
+    private var isActive = false
+    /// Evita bucles de reconexión concurrentes cuando caen vídeo y red a la vez.
+    private var reconnecting = false
+    private var sessionParams: SessionParams?
+    private var displayWatcher: DisplayWatcher?
+
     var onStateChange: ((State) -> Void)?
     var onStats: ((Stats) -> Void)?
 
@@ -41,6 +60,9 @@ final class StreamSession {
     /// cualquier otra es *extender* (ADR-006). El receptor ya conoce su techo por `/status`.
     /// `cap` permite forzar un techo por debajo del del receptor (para tests A/B de nitidez).
     /// `withAudio` abre además `POST /audio` con el PCM del sistema (spec: docs/protocol.md).
+    ///
+    /// Si la conexión se cae después, la sesión **se reconecta sola** (backoff en
+    /// `ReconnectPolicy`) hasta que se pida `stop()` o aparezca un error fatal.
     @MainActor
     func start(
         host: String,
@@ -50,31 +72,72 @@ final class StreamSession {
         cap: (width: Int, height: Int)? = nil,
         withAudio: Bool = true,
     ) async throws {
-        let status = try await receiverClient.fetchStatus(host: host)
+        let params = SessionParams(
+            host: host,
+            token: token,
+            displayID: displayID,
+            fps: fps,
+            cap: cap,
+            withAudio: withAudio,
+        )
+        isActive = true
+        sessionParams = params
+
+        do {
+            try await connect(params)
+        } catch {
+            isActive = false
+            sessionParams = nil
+            throw error
+        }
+
+        watchDisplayChanges(displayID)
+    }
+
+    @MainActor
+    func stop() async {
+        // Esperamos el cierre: si no, la CLI hace `exit()` y el terminador chunked
+        // ("0\r\n\r\n") se pierde → el receptor ve un RST en vez de un EOF limpio.
+        isActive = false
+        sessionParams = nil
+        displayWatcher = nil
+        await teardown()
+        onStateChange?(.stopped("Detenido"))
+    }
+
+    // MARK: - Privado
+
+    /// Abre vídeo (+audio) y arranca la captura con los parámetros dados.
+    /// Lanza si algo falla: quien decide si se reintenta es el bucle de reconexión.
+    @MainActor
+    private func connect(_ params: SessionParams) async throws {
+        let status = try await receiverClient.fetchStatus(host: params.host)
 
         let displays = try await ScreenCaptureHandler.availableDisplays()
-        guard let display = displays.first(where: { $0.id == String(displayID) }) else {
+        guard let display = displays.first(where: { $0.id == String(params.displayID) }) else {
             throw SenderError.displayNotFound
         }
 
-        let ceiling = cap ?? (status.maxW, status.maxH)
-        var config = StreamConfig(width: display.width, height: display.height, fps: fps)
+        // Se reconsulta /status y se reenumera la display en cada intento: así una
+        // caída aprovecha para adaptarse a un techo nuevo o a una resolución cambiada.
+        let ceiling = params.cap ?? (status.maxW, status.maxH)
+        var config = StreamConfig(width: display.width, height: display.height, fps: params.fps)
             .fitted(maxWidth: ceiling.width, maxHeight: ceiling.height)
         config.bitrateKbps = StreamConfig.bitrateKbps(forWidth: config.width, height: config.height)
 
         let encoder = try H264Encoder(config: config)
-        let streamClient = try StreamClient(host: host)
+        let streamClient = try StreamClient(host: params.host)
 
         // Abrimos primero: si la TV está ocupada (409) o rechaza la resolución (413)
         // lo sabemos antes de arrancar la captura.
-        _ = try await streamClient.open(query: config.query(token: token))
+        _ = try await streamClient.open(query: config.query(token: params.token))
 
         // El audio es opcional por spec: si la sesión de audio no abre (409 por una sesión
         // colgada, red…), seguimos con vídeo solo en lugar de abortar la emisión.
         var audioClient: StreamClient?
-        if withAudio {
+        if params.withAudio {
             do {
-                audioClient = try await openAudio(host: host, token: token)
+                audioClient = try await openAudio(host: params.host, token: params.token)
             } catch {
                 print("⚠ Audio no disponible (\(error.localizedDescription)): emitimos solo vídeo")
             }
@@ -86,7 +149,12 @@ final class StreamSession {
         wireCallbacks(encoder: encoder, streamClient: streamClient, capture: capture, audioClient: audioClient)
 
         do {
-            try await capture.start(displayID: displayID, width: config.width, height: config.height, fps: fps)
+            try await capture.start(
+                displayID: params.displayID,
+                width: config.width,
+                height: config.height,
+                fps: params.fps,
+            )
         } catch {
             await teardown()
             throw error
@@ -95,15 +163,6 @@ final class StreamSession {
         statsStartedAt = nil
         onStateChange?(.streaming(config))
     }
-
-    func stop() async {
-        // Esperamos el cierre: si no, la CLI hace `exit()` y el terminador chunked
-        // ("0\r\n\r\n") se pierde → el receptor ve un RST en vez de un EOF limpio.
-        await teardown()
-        onStateChange?(.stopped("Detenido"))
-    }
-
-    // MARK: - Privado
 
     /// Abre `POST /audio` con el formato PCM real de la salida del sistema (spec: docs/protocol.md).
     private func openAudio(host: String, token: String) async throws -> StreamClient {
@@ -169,10 +228,66 @@ final class StreamSession {
         await streamClient?.close()
     }
 
+    /// Fallo en plena emisión (red, decoder, captura): si la sesión sigue activa,
+    /// se reconecta sola; si no, se informa el estado y ya.
     private func fail(with error: Error) {
-        // El origen del fallo puede ser la propia red: no bloqueamos el callback esperando.
-        Task { await teardown() }
-        onStateChange?(.stopped(error.localizedDescription))
+        guard isActive else {
+            onStateChange?(.stopped(error.localizedDescription))
+            return
+        }
+        Task { await reconnect(reason: error.localizedDescription) }
+    }
+
+    /// Bucle de reconexión con backoff. Sale al reconectar, al pedir `stop()`
+    /// o al encontrar un error fatal (permiso, token caducado, pantalla ida).
+    @MainActor
+    private func reconnect(reason initialReason: String) async {
+        guard !reconnecting else { return } // caídas simultáneas (vídeo + red): un solo bucle
+        reconnecting = true
+        defer { reconnecting = false }
+
+        var reason = initialReason
+        var attempt = 1
+
+        while isActive {
+            let delay = ReconnectPolicy.delaySeconds(forAttempt: attempt)
+            onStateChange?(.reconnecting("\(reason) · reintento \(attempt)"))
+            if delay > 0 {
+                do {
+                    try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                } catch {
+                    return // cancelado
+                }
+            }
+            guard isActive else { return }
+
+            do {
+                guard let params = sessionParams else { return }
+                await teardown() // limpiar la sesión rota antes de montar la nueva
+                try await connect(params)
+                return // reconectado
+            } catch {
+                if ReconnectPolicy.isFatal(error) {
+                    isActive = false
+                    sessionParams = nil
+                    displayWatcher = nil
+                    await teardown()
+                    onStateChange?(.stopped(error.localizedDescription))
+                    return
+                }
+                reason = error.localizedDescription
+                attempt += 1
+            }
+        }
+    }
+
+    /// Reinicia la sesión cuando cambia la resolución/orientación de la display emmitida:
+    /// la captura anterior queda obsoleta y hay que reabrirla con el tamaño nuevo.
+    private func watchDisplayChanges(_ displayID: CGDirectDisplayID) {
+        displayWatcher = DisplayWatcher(displayID: displayID) { [weak self] in
+            guard let self, self.isActive else { return }
+            Task { await self.reconnect(reason: "Cambió la resolución o la orientación de la pantalla") }
+        }
     }
 
     private func recordFrame(at time: CMTime) {

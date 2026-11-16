@@ -45,9 +45,10 @@ Nueva entrada al final; no borrar las anteriores (a menos que se revoque, indic�
 
 - **Fecha**: 2026-11-14
 - **Contexto**: el usuario quiere **extender** el escritorio (dejar contenido en la TV y seguir trabajando en el Mac), no solo duplicarlo. Extender exige una **segunda pantalla** en el macOS, y **no existe API pública de macOS para crear pantallas virtuales**; solo API privada (`CGVirtualDisplay*`, no expuesta ni siquiera como símbolo en esta versión de macOS), hardware (clavija dummy, monitor) o software de terceros.
-- **Decisión**: el emisor tendrá un **selector de pantalla** (enumera las displays con `SCShareableContent` y captura la que se elija) con dos modos: *espejo* (pantalla principal) y *extender* (cualquier otra display). La **segunda pantalla la aporta el usuario** con una app de terceros tipo BetterDisplay/MacVirtualDisplay, un monitor o una clavija dummy. **No integramos API privada** en el proyecto.
+- **Decisión**: el emisor tendrá un **selector de pantalla** (enumera las displays con `SCShareableContent` y captura la que se elija) con dos modos: *espejo* (pantalla principal) y *extender* (cualquier otra display). La **segunda pantalla la aporta el usuario** con una app de terceros tipo BetterDisplay/MacVirtualDisplay, un monitor o una clavija dummy. ~~No integramos API privada en el proyecto~~ *(anulado el 2026-11-16: ver re-resolución abajo — pantalla virtual propia con API privada)*.
 - **Consecuencias**: el mismo código sirve para las 3 fuentes de pantalla; coste 0 si ya se tiene hardware; el usuario instala la app que prefiera (único paso manual); si algún día Apple publica una API, se puede sustituir sin tocar el protocolo.
 - **Resolución (2026-11-15, validado)**: probado con **BetterDisplay 5.2.1** (cask de Homebrew, capa gratuita crea pantallas virtuales por CLI: `betterdisplaycli create -type=VirtualScreen …`). Emitiendo la display virtual a la TV se ve un **escritorio vacío en la TV** = modo extendido real (no espejo). El selector `--display <id>` del emisor captura cualquier display sin cambios de código (ADR-006 sin deuda pendiente).
+- **Re-resolución (2026-11-16)**: se **elimina BetterDisplay** (desinstalado) y el emisor crea su **propia pantalla virtual** con `CGVirtualDisplay*` vía el shim `Sources/CGVirtualDisplayShim` (interfaces derivadas de Stengo/DeskPad, MIT). Se acepta **API privada** de Apple para este caso puntual: es el mismo mecanismo de DeskPad/BetterDisplay/OpenDisplay, no hay API pública (verificada en el SDK: ausente) y la app se distribuye por sideload, no por App Store. El shim es un único header: si Apple publica API oficial, se sustituye sin tocar el resto del código. CLI: `--virtual [WxH]` crea la display, la emite y la retira al salir. Validado E2E en la TV: escritorio vacío + cambio de resolución en caliente detectado (vía polling, ver ADR-009).
 
 ## ADR-007 — Resolución del stream: techo en 2560×1440
 
@@ -68,3 +69,13 @@ Nueva entrada al final; no borrar las anteriores (a menos que se revoque, indic�
   - El audio es **opcional por spec**: si `/audio` no abre (409, red), el emisor sigue emitiendo solo vídeo.
   - Dos conexiones TCP en vez de una; el servidor ya servía conexiones concurrentes, así que el coste es cero.
   - Si algún día se necesita reducir ancho de banda o sincronizar A/V con precisión, se cambia a AAC con timestamp en v1 (no rompe la spec si se añade un `codec=` al query).
+
+## ADR-009 — Reconexión automática con backoff + polling de display
+
+- **Fecha**: 2026-11-16
+- **Contexto**: la sesión se cae por motivos habituales en TV (el sistema mata el proceso del receptor, la red titubea, cambia la resolución u orientación de la pantalla). Sin reconexión, el usuario debe re-parear a mano.
+- **Decisión**:
+  - **Reconexión del emisor**: si la sesión activa cae, `StreamSession` reintenta con backoff exponencial 0.5/1/2/4/5 s (`ReconnectPolicy`). Errores **fatales** (permiso de pantalla denegado, token caducado, pantalla ida, PIN rechazado) cortan con su mensaje en vez de reintentar para siempre.
+  - **Tokens persistidos en el receptor** (`TokenStorage` + `SharedPreferences`): la TV puede matar el proceso del receptor y el emisor reconecta sin re-parear (TTL 24 h).
+  - **Cambio de resolución/orientación**: `DisplayWatcher` detecta el cambio y reinicia la sesión con el tamaño nuevo. **Hallazgo**: `CGDisplayRegisterReconfigurationCallback` **no se propaga entre procesos** (verificado con test propio: un cambio hecho por otro proceso nunca llega al callback registrado) → se combina el callback (cambios del propio proceso, reacción inmediata) con **polling de `CGDisplayBounds` cada 2 s** (cambios externos: Ajustes del sistema, otras apps).
+- **Consecuencias**: la TV puede reiniciarse o dormirse sin cortar la emisión (validado E2E: proceso matado a T=14 s, reconectado a T=22 s sin re-parear); una resolución cambia en ≤2,5 s (poll 2 s + debounce 0,5 s); el polling cuesta una comparación de CGRect cada 2 s (despreciable). El receptor no cambia: su `finally` ya liberaba el stream en EOF/RST.

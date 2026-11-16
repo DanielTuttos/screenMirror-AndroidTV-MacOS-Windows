@@ -12,15 +12,24 @@ import java.util.concurrent.ConcurrentLinkedQueue
 /**
  * PIN de 6 dígitos por sesión + tokens con caducidad, con rate limit por ventana.
  * El reloj se inyecta para poder testear la caducidad sin esperar.
+ * Los tokens se guardan en [TokenStorage] para sobrevivir a la muerte del proceso de la TV.
  */
 class PairingStore(
     private val now: () -> Long = System::currentTimeMillis,
     private val random: SecureRandom = SecureRandom(),
+    private val storage: TokenStorage = InMemoryTokenStorage(),
 ) : PairingRepository {
 
     private val pin: String = randomPin()
     private val tokens = ConcurrentHashMap<String, Long>() // token -> fecha de caducidad
     private val attempts = ConcurrentLinkedQueue<Long>()
+
+    init {
+        // Tokens emitidos antes de que la TV reiniciara el proceso: el emisor puede reconectar.
+        storage.load().forEach { (token, expiry) ->
+            if (expiry > now()) tokens[token] = expiry
+        }
+    }
 
     override fun currentPin(): String = pin
 
@@ -36,6 +45,7 @@ class PairingStore(
         pruneExpiredTokens()
         val token = randomToken()
         tokens[token] = now() + Protocol.TOKEN_TTL_MS
+        persist()
         return Outcome.Success(token)
     }
 
@@ -44,6 +54,7 @@ class PairingStore(
         val expiry = tokens[token] ?: return false
         if (now() > expiry) {
             tokens.remove(token)
+            persist()
             return false
         }
         return true
@@ -62,8 +73,12 @@ class PairingStore(
 
     private fun pruneExpiredTokens() {
         val currentTime = now()
+        val before = tokens.size
         tokens.entries.removeIf { it.value < currentTime }
+        if (tokens.size != before) persist()
     }
+
+    private fun persist() = storage.save(tokens.toMap())
 
     private fun randomPin(): String = "%06d".format(random.nextInt(1_000_000))
 

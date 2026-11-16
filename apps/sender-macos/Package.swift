@@ -9,8 +9,14 @@ let package = Package(
         .macOS(.v13),
     ],
     targets: [
+        // Declaraciones de la API privada de displays virtuales (ver cabecera).
+        .target(
+            name: "CGVirtualDisplayShim",
+            path: "Sources/CGVirtualDisplayShim"
+        ),
         .executableTarget(
             name: "ScreenMirrorSender",
+            dependencies: ["CGVirtualDisplayShim"],
             path: "Sources/ScreenMirrorSender"
         ),
         .testTarget(
