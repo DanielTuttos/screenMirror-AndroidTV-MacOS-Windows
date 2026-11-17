@@ -115,19 +115,19 @@ private fun PinOverlay(pin: String) {
 
 @Composable
 private fun StatsHud(stats: StreamStats) {
-    Column(
-        modifier = Modifier
-            .padding(24.dp)
-            .background(Color(0xCC0D1117), MaterialTheme.shapes.small)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.BottomStart,
     ) {
-        Text(text = "● RECIBIENDO", color = Color(0xFF3DDC84), fontSize = 16.sp)
-        Text(text = "${stats.bitrateKbps} kbps · ${stats.fps} fps", color = Color.White, fontSize = 16.sp)
         Text(
-            text = "frames ${stats.frames} · descartados ${stats.droppedFrames}",
-            color = Color(0xFF8B949E),
-            fontSize = 14.sp,
+            text = "${stats.fps} fps",
+            color = Color(0x88FFFFFF),
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier
+                .padding(start = 16.dp, bottom = 12.dp)
+                .background(Color(0x44000000), MaterialTheme.shapes.extraSmall)
+                .padding(horizontal = 6.dp, vertical = 2.dp),
         )
     }
 }
