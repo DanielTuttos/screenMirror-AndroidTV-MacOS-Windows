@@ -108,7 +108,20 @@ struct SenderView: View {
                             .foregroundStyle(.secondary)
                         Picker("", selection: $model.targetFps) {
                             Text("30 fps").tag(30)
-                            Text("60 fps (Fluido)").tag(60)
+                            Text("60 fps").tag(60)
+                        }
+                        .pickerStyle(.segmented)
+                        .disabled(model.isStreaming)
+                    }
+
+                    HStack {
+                        Text("Calidad:")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Picker("", selection: $model.targetResolutionHeight) {
+                            Text("720p").tag(Optional(720))
+                            Text("1080p").tag(Optional(1080))
+                            Text("1440p (2K)").tag(Optional(1440))
                         }
                         .pickerStyle(.segmented)
                         .disabled(model.isStreaming)

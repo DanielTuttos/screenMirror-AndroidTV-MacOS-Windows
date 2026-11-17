@@ -15,6 +15,8 @@ final class SenderViewModel: ObservableObject {
     @Published var selectedDisplayID: String?
     /// FPS deseados (30 para menos uso de red/batería o 60 para máxima fluidez).
     @Published var targetFps: Int = 60
+    /// Techo de resolución deseado: nil = Automático (techo máximo de la TV, 1440p)
+    @Published var targetResolutionHeight: Int? = nil
     /// Pantalla virtual propia creada por el emisor (nil = no creada, ADR-006).
     @Published private(set) var virtualDisplay: VirtualDisplay?
     @Published var isStreaming = false
@@ -204,7 +206,10 @@ final class SenderViewModel: ObservableObject {
 
         Task {
             do {
-                try await session.start(host: host, token: token, displayID: displayID, fps: targetFps)
+                let cap: (width: Int, height: Int)? = targetResolutionHeight.map { h in
+                    (width: h * 16 / 9, height: h)
+                }
+                try await session.start(host: host, token: token, displayID: displayID, fps: targetFps, cap: cap)
             } catch {
                 errorText = error.localizedDescription
                 if error as? SenderError == .unauthorized { discardToken() }
