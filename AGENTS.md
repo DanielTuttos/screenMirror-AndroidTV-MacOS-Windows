@@ -2,6 +2,7 @@
 
 > **OBLIGATORIO**: leer este archivo completo al **inicio** de cada sesión de trabajo y **actualizarlo al final** (sección 2). Es la única fuente de verdad del estado del proyecto.
 > Si la sesión arranca en una subcarpeta, navegar hasta la raíz del proyecto y leerlo igual.
+> **Además, leer `HANDOFF.md` (raíz)** si existe: traspaso detallado de la sesión en curso (qué se estaba haciendo, cambios sin commitear y trucos del entorno). Al avanzar la fase, se archiva y manda solo este archivo.
 
 ---
 
@@ -31,9 +32,9 @@ Pilares:
 |---|---|
 | Última actualización | 2026-11-16 |
 | Fase | **2 — Descubrimiento + emisor macOS: 🟡 EN CURSO** (mDNS, audio, reconexión y pantalla virtual propia completos y validados en TV; queda la GUI del menú de barra) |
-| Siguiente paso | GUI del emisor (lista de TVs + PIN + displays + botón pantalla virtual) → token en Keychain → `sender-windows` |
+| Siguiente paso | **Ver visualmente la GUI con el nuevo botón "pantalla virtual" (cambios SIN commitear, ver `HANDOFF.md` §4)** → commit → token en Keychain → `sender-windows` |
 | `apps/receiver-tv` | 🟢 compila · **40 tests en verde** · **validado en TV real** (Riviera 55" TPQ10, `192.168.10.63`, Android 14, MediaTek) · anuncia `_screenmirror._tcp` · id de dispositivo permanente · **tokens persistidos en SharedPreferences** (sobreviven a muerte del proceso) |
-| `apps/sender-macos` | 🟢 compila · **19 tests en verde** · **E2E en TV real**: `--discover` (mDNS) → PIN → vídeo **2560×1440@30fps** + **audio PCM** (`--no-audio` para desactivar) · **pantalla virtual propia** `--virtual [WxH]` (sin BetterDisplay, desinstalado) · **reconexión** con backoff 0.5→5 s + cambio de resolución en caliente re-emitiendo · CLI completa |
+| `apps/sender-macos` | 🟢 compila · **19 tests en verde** · **E2E en TV real**: `--discover` (mDNS) → PIN → vídeo **2560×1440@30fps** + **audio PCM** (`--no-audio` para desactivar) · **pantalla virtual propia** `--virtual [WxH]` (sin BetterDisplay, desinstalado) · **reconexión** con backoff 0.5→5 s + cambio de resolución en caliente re-emitiendo · CLI completa · **GUI: toggle "pantalla virtual" añadido sin commitear, falta verificación visual** (ver `HANDOFF.md`) |
 | `apps/sender-windows` | ⚪ no iniciado |
 | Bloqueos | — |
 | Último aprendido | `CGDisplayRegisterReconfigurationCallback` **no se propaga entre procesos**: los cambios de resolución hechos por otros nunca llegan al callback → `DisplayWatcher` combina callback (cambios propios) + polling de `CGDisplayBounds` cada 2 s. Y `CGDisplaySetDisplayMode` revierte al salir el proceso que lo aplica. |
@@ -160,7 +161,7 @@ Flujo: `ui → caso de uso → interfaz (domain) → impl (data) → core`.
 
 ## 8. 🔁 Protocolo de sesión (cómo trabajar aquí)
 
-1. **Leer este archivo completo.**
+1. **Leer este archivo completo** y, si existe, `HANDOFF.md` (traspaso de la sesión en curso).
 2. Leer `docs/roadmap.md` y ubicar la fase actual.
 3. Trabajar aplicando las reglas de la sección 6.
 4. Si se cambia el protocolo → actualizar `docs/protocol.md` + las 3 apps + este archivo.
