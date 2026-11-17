@@ -41,7 +41,7 @@ enum CLIStreamer {
             // enumerar displays y se libera al salir del scope.
             var virtualDisplay: VirtualDisplay?
             if let size = arguments.virtual {
-                virtualDisplay = try VirtualDisplay(name: "ScreenMirror", modes: Self.virtualModes(size))
+                virtualDisplay = try VirtualDisplay(name: "ScreenMirror", size: size)
                 print("==> Pantalla virtual \(size.width)x\(size.height) creada (id \(virtualDisplay!.displayID))")
             }
 
@@ -111,17 +111,6 @@ enum CLIStreamer {
             print("  \(receiver.name)  \(receiver.host):\(receiver.port)  \(pairing)")
         }
         return 0
-    }
-
-    /// Modos que ofrece la pantalla virtual: el pedido + el resto de la lista
-    /// (así el usuario puede cambiar de resolución en Ajustes y el DisplayWatcher reacciona).
-    private static func virtualModes(_ size: (width: Int, height: Int)) -> [(width: Int, height: Int)] {
-        let common = [(2560, 1440), (1920, 1080), (1600, 900), (1280, 720)]
-        var modes = [size]
-        for mode in common where mode != size {
-            modes.append(mode)
-        }
-        return modes
     }
 
     private static func selectDisplay(from displays: [DisplayDescriptor], selector: String) async throws -> CGDirectDisplayID {

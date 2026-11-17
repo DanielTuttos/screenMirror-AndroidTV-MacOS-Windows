@@ -13,6 +13,8 @@ final class SenderViewModel: ObservableObject {
     @Published var receivers: [DiscoveredReceiver] = []
     @Published var displays: [DisplayDescriptor] = []
     @Published var selectedDisplayID: String?
+    /// Pantalla virtual propia creada por el emisor (nil = no creada, ADR-006).
+    @Published private(set) var virtualDisplay: VirtualDisplay?
     @Published var isStreaming = false
     @Published var statsText: String?
     @Published var errorText: String?
@@ -61,14 +63,64 @@ final class SenderViewModel: ObservableObject {
         }
         Task {
             do {
-                displays = try await ScreenCaptureHandler.availableDisplays()
-                if selectedDisplayID == nil {
-                    selectedDisplayID = displays.first(where: \.isMain)?.id ?? displays.first?.id
+                // macOS tarda un poco en listar una pantalla virtual recién creada:
+                // si no aparece a la primera, se reintenta una vez.
+                var list = try await ScreenCaptureHandler.availableDisplays()
+                if let pending = virtualDisplay?.displayID,
+                   !list.contains(where: { $0.id == String(pending) }) {
+                    try await Task.sleep(nanoseconds: 500_000_000)
+                    list = try await ScreenCaptureHandler.availableDisplays()
+                }
+                displays = list
+                // Preserva la selección; si la pantalla elegida ya no existe
+                // (p. ej. se retiró la virtual), vuelve a la principal.
+                if selectedDisplayID == nil || !list.contains(where: { $0.id == selectedDisplayID }) {
+                    selectedDisplayID = list.first(where: \.isMain)?.id ?? list.first?.id
                 }
             } catch {
                 errorText = error.localizedDescription
             }
         }
+    }
+
+    /// Crea o retira la pantalla virtual propia (botón de la GUI, ADR-006).
+    func setVirtualDisplay(enabled: Bool) {
+        if enabled {
+            // Cambiar de pantalla en mitad de una emisión deja la UI mostrando
+            // una pantalla que no se está emitiendo: mejor avisar.
+            guard !isStreaming else {
+                errorText = "Detén la emisión antes de crear la pantalla virtual."
+                return
+            }
+            do {
+                let display = try VirtualDisplay(name: "ScreenMirror", size: (2560, 1440))
+                virtualDisplay = display
+                selectedDisplayID = String(display.displayID)
+                errorText = nil
+                refreshDisplays()
+            } catch {
+                errorText = error.localizedDescription
+            }
+            return
+        }
+        // Si se emite desde la virtual, primero se corta la sesión: la captura
+        // apunta a una pantalla que va a desaparecer.
+        if let display = virtualDisplay, isStreaming,
+           selectedDisplayID == String(display.displayID) {
+            Task {
+                await session.stop()
+                releaseVirtualDisplay()
+            }
+        } else {
+            releaseVirtualDisplay()
+        }
+    }
+
+    /// Al liberarse el objeto, macOS retira la display (como desenchufarla).
+    private func releaseVirtualDisplay() {
+        virtualDisplay = nil
+        selectedDisplayID = nil
+        refreshDisplays()
     }
 
     func fetchStatus() {

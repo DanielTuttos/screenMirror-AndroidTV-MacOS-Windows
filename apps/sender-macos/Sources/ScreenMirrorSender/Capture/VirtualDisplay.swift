@@ -14,6 +14,18 @@ final class VirtualDisplay {
 
     let displayID: CGDirectDisplayID
 
+    /// Crea una pantalla virtual de un tamaño dado (CLI y GUI comparten esto).
+    /// El primer modo es el pedido; el resto da margen para cambiar de
+    /// resolución en Ajustes (el `DisplayWatcher` reacciona).
+    convenience init(name: String, size: (width: Int, height: Int)) throws {
+        let common = [(2560, 1440), (1920, 1080), (1600, 900), (1280, 720)]
+        var modes = [size]
+        for mode in common where mode != size {
+            modes.append(mode)
+        }
+        try self.init(name: name, modes: modes)
+    }
+
     /// Crea una pantalla virtual con los modos dados y la deja conectada.
     init(name: String, modes: [(width: Int, height: Int)]) throws {
         let descriptor = CGVirtualDisplayDescriptor()

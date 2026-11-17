@@ -60,6 +60,18 @@ struct SenderView: View {
 
             GroupBox("Pantalla") {
                 VStack(alignment: .leading, spacing: 6) {
+                    Toggle(isOn: Binding(
+                        get: { model.virtualDisplay != nil },
+                        set: { model.setVirtualDisplay(enabled: $0) }
+                    )) {
+                        Text("Pantalla virtual (extender)")
+                    }
+                    .toggleStyle(.switch)
+                    if model.virtualDisplay != nil {
+                        Text("Escritorio vacío en la TV: se crea una 2ª pantalla en este Mac.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     if model.displays.isEmpty {
                         Text("Sin pantallas: pulsa «Actualizar».")
                             .font(.caption)
