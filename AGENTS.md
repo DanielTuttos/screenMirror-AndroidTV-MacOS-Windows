@@ -31,13 +31,13 @@ Pilares:
 | Campo | Valor |
 |---|---|
 | Última actualización | 2026-11-17 |
-| Fase | **2 — Descubrimiento + emisor macOS: 🟡 EN CURSO** (mDNS, audio, reconexión, pantalla virtual propia, GUI con toggle de pantalla virtual y token en Keychain; falta probar el toggle de la GUI a mano) |
-| Siguiente paso | Probar a mano el toggle de la GUI y el flujo con token guardado (cerrar y reabrir la app sin re-emparejar) → `sender-windows` |
-| `apps/receiver-tv` | 🟢 compila · **40 tests en verde** · **validado en TV real** (Riviera 55" TPQ10, `192.168.10.63`, Android 14, MediaTek) · anuncia `_screenmirror._tcp` · id de dispositivo permanente · **tokens persistidos en SharedPreferences** (sobreviven a muerte del proceso) |
-| `apps/sender-macos` | 🟢 compila · **23 tests en verde** · **E2E en TV real**: `--discover` (mDNS) → PIN → vídeo **2560×1440@30fps** + **audio PCM** (`--no-audio` para desactivar) · **pantalla virtual propia** `--virtual [WxH]` (revalidada 2026-11-17) · **reconexión** con backoff 0.5→5 s + cambio de resolución en caliente · CLI completa · **GUI** de menú de barra con lista de TVs, PIN, displays y toggle de pantalla virtual (commit `826ea54`; toggle sin probar a mano) · **token por TV en Keychain** (`KeychainTokenStore`; se carga al elegir TV, se borra si la TV responde 401) |
+| Fase | **2 — Descubrimiento + emisor macOS: 🟢 COMPLETA / PULIDA** (mDNS, audio dinámico con driver HAL propio, eliminación de estática con PcmFrameAligner, stream fluido a 60 fps @ 1440p, reconexión, pantalla virtual propia, Keychain, GUI de menú de barra) |
+| Siguiente paso | `sender-windows` (Fase 3: Windows.Graphics.Capture + NVENC) |
+| `apps/receiver-tv` | 🟢 compila · **44 tests en verde** · **validado en TV real** (Riviera 55" TPQ10, `192.168.10.63`, Android 14, MediaTek) · soporte de decodificación a 60 fps con buffers de baja latencia · audio sincronizado y alineado sin chasquidos (`PcmFrameAligner`) · anuncia `_screenmirror._tcp` |
+| `apps/sender-macos` | 🟢 compila · **23 tests en verde** · **E2E en TV real**: vídeo **2560×1440 @ 60fps** super fluido + **audio dinámico con driver propio** (`ScreenMirror TV` visible solo cuando la app corre) · selector de fluidez (30 / 60 fps) en GUI · Keychain para tokens |
 | `apps/sender-windows` | ⚪ no iniciado |
-| Bloqueos | `osascript` sin permiso de accesibilidad: no se puede automatizar la GUI para verla; hay que probarla a mano |
-| Último aprendido | Los tokens del receptor caducan a las 24 h: con un token viejo el emisor falla con `unauthorized`, y el PIN vigente se lee de la pantalla de la TV (`adb exec-out screencap`). `git` y `swift` necesitan salir del sandbox del agente (escriben en `.git` y en la caché de módulos). |
+| Bloqueos | — |
+| Último aprendido | Para emitir a 60 fps estables sin stutter: `kVTCompressionPropertyKey_DataRateLimits` en VideoToolbox evita picos que saturan TCP, y reducir timeouts en el bucle decodificador de `VideoPipeline` baja la latencia dramáticamente. Para audio condicional a nivel de sistema, un driver HAL con socket IPC añade/remueve el dispositivo según la presencia del proceso. |
 
 ---
 
