@@ -37,7 +37,7 @@ final class StreamSession {
     private var encoder: H264Encoder?
     private var streamClient: StreamClient?
     private var audioClient: StreamClient?
-    private let audioConverter = PCMAudioConverter()
+    private var audioTap: SystemAudioTap?
     private var stats = Stats()
     private var statsStartedAt: CMTime?
     private let statsQueue = DispatchQueue(label: "tv.screenmirror.sender.stats")
@@ -132,13 +132,17 @@ final class StreamSession {
         // lo sabemos antes de arrancar la captura.
         _ = try await streamClient.open(query: config.query(token: params.token))
 
-        // El audio es opcional por spec: si la sesión de audio no abre (409 por una sesión
-        // colgada, red…), seguimos con vídeo solo en lugar de abortar la emisión.
+        // El audio es opcional por spec: sin el driver «ScreenMirror TV», o si la sesión de
+        // audio no abre (409 por una sesión colgada, red…), seguimos con vídeo solo.
         var audioClient: StreamClient?
+        var audioTap: SystemAudioTap?
         if params.withAudio {
             do {
-                audioClient = try await openAudio(host: params.host, token: params.token)
+                let tap = try SystemAudioTap()
+                audioTap = tap
+                audioClient = try await openAudio(host: params.host, token: params.token, format: tap.format)
             } catch {
+                audioTap = nil
                 print("⚠ Audio no disponible (\(error.localizedDescription)): emitimos solo vídeo")
             }
         }
@@ -146,7 +150,8 @@ final class StreamSession {
         self.encoder = encoder
         self.streamClient = streamClient
         self.audioClient = audioClient
-        wireCallbacks(encoder: encoder, streamClient: streamClient, capture: capture, audioClient: audioClient)
+        self.audioTap = audioTap
+        wireCallbacks(encoder: encoder, streamClient: streamClient, capture: capture, audioClient: audioClient, audioTap: audioTap)
 
         do {
             try await capture.start(
@@ -155,6 +160,7 @@ final class StreamSession {
                 height: config.height,
                 fps: params.fps,
             )
+            try audioTap?.start()
         } catch {
             await teardown()
             throw error
@@ -164,16 +170,21 @@ final class StreamSession {
         onStateChange?(.streaming(config))
     }
 
-    /// Abre `POST /audio` con el formato PCM real de la salida del sistema (spec: docs/protocol.md).
-    private func openAudio(host: String, token: String) async throws -> StreamClient {
-        let format = SystemAudioFormat.current()
+    /// Abre `POST /audio` con el formato PCM real del tap (spec: docs/protocol.md).
+    private func openAudio(host: String, token: String, format: SystemAudioTap.Format) async throws -> StreamClient {
         let client = try StreamClient(host: host, path: Protocol.pathAudio, contentType: Protocol.contentTypePcm)
         let query = "token=\(token)&sr=\(format.sampleRate)&ch=\(format.channels)"
         _ = try await client.open(query: query)
         return client
     }
 
-    private func wireCallbacks(encoder: H264Encoder, streamClient: StreamClient, capture: ScreenCaptureHandler, audioClient: StreamClient?) {
+    private func wireCallbacks(
+        encoder: H264Encoder,
+        streamClient: StreamClient,
+        capture: ScreenCaptureHandler,
+        audioClient: StreamClient?,
+        audioTap: SystemAudioTap?,
+    ) {
         capture.onFrame = { [weak self] sampleBuffer in
             guard let self, let encoder = self.encoder else { return }
             let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
@@ -185,13 +196,7 @@ final class StreamSession {
         capture.onError = { [weak self] error in
             self?.fail(with: error)
         }
-        capture.onAudio = { [weak self] sampleBuffer in
-            guard let self, let audioClient = self.audioClient else { return }
-            // Conversión en la cola de captura (no en main): el PCM ya sale en el formato del protocolo.
-            if let pcm = self.audioConverter.convert(sampleBuffer) {
-                audioClient.send(pcm)
-            }
-        }
+        audioTap?.onPCM = { pcm in audioClient?.send(pcm) }
         encoder.onAccessUnit = { [weak self] accessUnit in
             self?.streamClient?.send(accessUnit)
             self?.recordBytes(accessUnit.count)
@@ -206,8 +211,8 @@ final class StreamSession {
 
     private func teardown() async {
         capture.onFrame = nil
-        capture.onAudio = nil
         capture.onError = nil
+        audioTap?.onPCM = nil
         encoder?.onAccessUnit = nil
         encoder?.onError = nil
 
@@ -215,10 +220,14 @@ final class StreamSession {
         let encoder = encoder
         let streamClient = streamClient
         let audioClient = audioClient
+        let audioTap = audioTap
         self.encoder = nil
         self.streamClient = nil
         self.audioClient = nil
+        self.audioTap = nil
 
+        // Primero el tap: así el Mac recupera su sonido aunque el resto del cierre tarde.
+        audioTap?.stop()
         // Los callbacks ya están desenganchados: el estado se informó en `stop()`/`fail(with:)`,
         // así que un fallo al detener la captura no cambia nada para quien nos escucha.
         try? await capture.stop()

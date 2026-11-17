@@ -19,6 +19,10 @@ class AudioPipeline {
 
     private val running = AtomicBoolean(false)
     private var audioTrack: AudioTrack? = null
+    private var aligner: PcmFrameAligner? = null
+    private var prebufferTarget = 0
+    private var bufferedBeforePlay = 0
+    private var playing = false
 
     fun start(request: AudioRequest): Outcome<Unit> {
         if (!running.compareAndSet(false, true)) {
@@ -43,8 +47,11 @@ class AudioPipeline {
                 return Outcome.Failure(ReceiverError.InvalidRequest("configuración de audio no soportada"))
             }
 
-            // Buffer ajustado a 2x el mínimo (suficiente para evitar underruns sin añadir latencia de cola)
-            val bufferSize = minBufferSize * 2
+            // ~200 ms de colchón: la red por Wi-Fi tiene baches y un underrun suena a
+            // chasquido/estática. Es latencia que ya queda por debajo de la del vídeo.
+            val frameBytes = request.channels * BYTES_PER_SAMPLE
+            val targetBytes = request.sampleRate * frameBytes * BUFFER_MILLIS / 1000
+            val bufferSize = maxOf(minBufferSize * 2, targetBytes)
 
             val attributes = AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -64,9 +71,14 @@ class AudioPipeline {
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
 
-            track.play()
+            // No se llama a play() aquí: arranca en writePcm cuando el colchón está medio
+            // lleno, para que la reproducción no empiece ya vacía y haga underrun.
             audioTrack = track
-            Log.i(TAG, "AudioTrack iniciado: ${request.sampleRate}Hz, ${request.channels}ch, buffer: ${bufferSize}B")
+            aligner = PcmFrameAligner(frameBytes)
+            prebufferTarget = bufferSize / 2
+            bufferedBeforePlay = 0
+            playing = false
+            Log.i(TAG, "AudioTrack creado: ${request.sampleRate}Hz, ${request.channels}ch, buffer: ${bufferSize}B")
             Outcome.Success(Unit)
         } catch (e: Exception) {
             running.set(false)
@@ -77,11 +89,24 @@ class AudioPipeline {
 
     /**
      * Escribe muestras PCM al AudioTrack de forma síncrona/bloqueante desde el hilo de red.
+     * Solo se escriben frames completos; el resto espera al siguiente read (ver `PcmFrameAligner`).
      */
     fun writePcm(buffer: ByteArray, offset: Int, size: Int): Int {
         val track = audioTrack ?: return -1
+        val aligner = aligner ?: return -1
         if (!running.get()) return -1
-        return track.write(buffer, offset, size, AudioTrack.WRITE_BLOCKING)
+
+        val aligned = aligner.feed(buffer, offset, size)
+        if (aligned.isEmpty()) return 0
+        val written = track.write(aligned, 0, aligned.size, AudioTrack.WRITE_BLOCKING)
+        if (written > 0 && !playing) {
+            bufferedBeforePlay += written
+            if (bufferedBeforePlay >= prebufferTarget) {
+                track.play()
+                playing = true
+            }
+        }
+        return written
     }
 
     fun isRunning(): Boolean = running.get()
@@ -99,11 +124,14 @@ class AudioPipeline {
             Log.w(TAG, "Error liberando AudioTrack: ${e.message}")
         } finally {
             audioTrack = null
+            aligner = null
             Log.i(TAG, "AudioTrack detenido")
         }
     }
 
     companion object {
         private const val TAG = "AudioPipeline"
+        private const val BYTES_PER_SAMPLE = 2
+        private const val BUFFER_MILLIS = 200
     }
 }

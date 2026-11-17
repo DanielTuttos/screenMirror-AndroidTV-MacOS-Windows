@@ -21,6 +21,8 @@ enum CLIStreamer {
         }
 
         let receiver = ReceiverClient()
+        let audioConnection = AudioDriverConnection()
+        _ = audioConnection
         do {
             let token: String
             if let explicitToken = arguments.token {

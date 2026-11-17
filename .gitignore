@@ -27,3 +27,6 @@ obj/
 
 # Node (herramientas auxiliares)
 node_modules/
+
+# Driver de audio: artefactos de CMake
+drivers/macos-audio/build/

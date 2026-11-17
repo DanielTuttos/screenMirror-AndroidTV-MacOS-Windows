@@ -198,8 +198,8 @@ class VideoPipeline(private val videoSurface: VideoSurface) {
 
     companion object {
         private const val TAG = "VideoPipeline"
-        private const val MAX_PENDING_AUS = 24
-        private const val POLL_TIMEOUT_MS = 10L
-        private const val INPUT_TIMEOUT_US = 10_000L
+        private const val MAX_PENDING_AUS = 64
+        private const val POLL_TIMEOUT_MS = 5L
+        private const val INPUT_TIMEOUT_US = 5_000L
     }
 }

@@ -15,7 +15,6 @@ final class ScreenCaptureHandler: NSObject {
     private let sampleQueue = DispatchQueue(label: "tv.screenmirror.sender.capture", qos: .userInteractive)
 
     var onFrame: ((CMSampleBuffer) -> Void)?
-    var onAudio: ((CMSampleBuffer) -> Void)?
     var onError: ((Error) -> Void)?
 
     /// macOS exige el permiso de Grabación de pantalla. Devuelve false si la persona lo rechazó.
@@ -40,7 +39,7 @@ final class ScreenCaptureHandler: NSObject {
         }
     }
 
-    func start(displayID: CGDirectDisplayID, width: Int, height: Int, fps: Int, capturesAudio: Bool = true) async throws {
+    func start(displayID: CGDirectDisplayID, width: Int, height: Int, fps: Int) async throws {
         let content = try await Self.shareableContent()
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
             throw SenderError.displayNotFound
@@ -56,11 +55,6 @@ final class ScreenCaptureHandler: NSObject {
         configuration.showsCursor = true
         // Cola corta: los frames viejos no sirven, solo estorban la latencia.
         configuration.queueDepth = 3
-        // Audio PCM del sistema (espejo de lo que suena en el Mac) para el endpoint /audio.
-        configuration.capturesAudio = capturesAudio
-        if capturesAudio {
-            configuration.excludesCurrentProcessAudio = false
-        }
 
         let stream = SCStream(
             filter: SCContentFilter(display: display, excludingWindows: []),
@@ -68,9 +62,6 @@ final class ScreenCaptureHandler: NSObject {
             delegate: self,
         )
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: sampleQueue)
-        if capturesAudio {
-            try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleQueue)
-        }
         try await stream.startCapture()
         self.stream = stream
     }
@@ -102,14 +93,7 @@ final class ScreenCaptureHandler: NSObject {
 
 extension ScreenCaptureHandler: SCStreamOutput {
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        switch type {
-        case .screen:
-            onFrame?(sampleBuffer)
-        case .audio:
-            onAudio?(sampleBuffer)
-        default:
-            break
-        }
+        if type == .screen { onFrame?(sampleBuffer) }
     }
 }
 

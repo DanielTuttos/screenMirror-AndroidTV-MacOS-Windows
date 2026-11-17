@@ -6,7 +6,8 @@ import PackageDescription
 let package = Package(
     name: "ScreenMirrorSender",
     platforms: [
-        .macOS(.v13),
+        // 14.2: tap de audio de Core Audio con mute local (ver SystemAudioTap).
+        .macOS("14.2"),
     ],
     targets: [
         // Declaraciones de la API privada de displays virtuales (ver cabecera).

@@ -3,6 +3,7 @@ package tv.screenmirror.receiver.data.http
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import tv.screenmirror.receiver.core.Protocol
 import tv.screenmirror.receiver.domain.Outcome
 import tv.screenmirror.receiver.domain.ReceiverError
 import tv.screenmirror.receiver.domain.model.StreamRequest
@@ -22,9 +23,9 @@ class StreamRequestParserTest {
     fun `aplica valores por defecto cuando faltan opcionales`() {
         val request = StreamRequestParser.parse("token=abc&w=640&h=360") as Outcome.Success
 
-        assertEquals(30, request.value.fps)
-        assertEquals(60, request.value.keyint)
-        assertEquals(8_000, request.value.bitrateKbps)
+        assertEquals(Protocol.DEFAULT_FPS, request.value.fps)
+        assertEquals(Protocol.DEFAULT_KEYINT, request.value.keyint)
+        assertEquals(Protocol.DEFAULT_BITRATE_KBPS, request.value.bitrateKbps)
     }
 
     @Test

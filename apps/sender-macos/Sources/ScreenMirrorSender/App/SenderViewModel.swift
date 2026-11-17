@@ -13,9 +13,13 @@ final class SenderViewModel: ObservableObject {
     @Published var receivers: [DiscoveredReceiver] = []
     @Published var displays: [DisplayDescriptor] = []
     @Published var selectedDisplayID: String?
+    /// FPS deseados (30 para menos uso de red/batería o 60 para máxima fluidez).
+    @Published var targetFps: Int = 60
     /// Pantalla virtual propia creada por el emisor (nil = no creada, ADR-006).
     @Published private(set) var virtualDisplay: VirtualDisplay?
     @Published var isStreaming = false
+    /// El driver «ScreenMirror TV» aporta la salida de sonido que va a la TV (drivers/macos-audio).
+    @Published private(set) var isAudioDriverInstalled = SystemAudioTap.isDeviceInstalled()
     @Published var statsText: String?
     @Published var errorText: String?
 
@@ -23,9 +27,15 @@ final class SenderViewModel: ObservableObject {
     private let session = StreamSession()
     private let browser = ReceiverBrowser()
     private let tokenStore: TokenStore
+    private let audioConnection = AudioDriverConnection()
 
     init(tokenStore: TokenStore = KeychainTokenStore()) {
         self.tokenStore = tokenStore
+        // Tras conectar el socket con el driver, le damos un breve instante a coreaudiod
+        // para publicar el dispositivo antes de comprobar el estado para la UI.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.isAudioDriverInstalled = SystemAudioTap.isDeviceInstalled()
+        }
         // Los callbacks llegan desde las colas de captura y de red: la UI solo se
         // toca en el hilo principal.
         browser.onUpdate = { [weak self] list in
@@ -59,6 +69,7 @@ final class SenderViewModel: ObservableObject {
     }
 
     func refreshDisplays() {
+        isAudioDriverInstalled = SystemAudioTap.isDeviceInstalled()
         guard ScreenCaptureHandler.requestPermission() else {
             errorText = SenderError.screenRecordingDenied.localizedDescription
             return
@@ -193,7 +204,7 @@ final class SenderViewModel: ObservableObject {
 
         Task {
             do {
-                try await session.start(host: host, token: token, displayID: displayID)
+                try await session.start(host: host, token: token, displayID: displayID, fps: targetFps)
             } catch {
                 errorText = error.localizedDescription
                 if error as? SenderError == .unauthorized { discardToken() }

@@ -11,6 +11,7 @@ enum SenderError: Error, Equatable {
     case connectionFailed(String)
     case unexpectedStatus(Int)
     case encoderFailed(String)
+    case audioUnavailable(String)
     case invalidStatus
     case malformedResponse
 }
@@ -37,6 +38,8 @@ extension SenderError: LocalizedError {
             return "Respuesta inesperada de la TV (HTTP \(code))."
         case .encoderFailed(let reason):
             return "El codificador falló: \(reason)"
+        case .audioUnavailable(let reason):
+            return "Audio no disponible: \(reason)"
         case .invalidStatus:
             return "La TV devolvió un /status que no se entendió."
         case .malformedResponse:

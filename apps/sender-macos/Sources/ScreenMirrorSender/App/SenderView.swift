@@ -99,7 +99,29 @@ struct SenderView: View {
                     }
                     Button("Actualizar pantallas") { model.refreshDisplays() }
                         .font(.caption)
+
+                    Divider()
+
+                    HStack {
+                        Text("Fluidez:")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Picker("", selection: $model.targetFps) {
+                            Text("30 fps").tag(30)
+                            Text("60 fps (Fluido)").tag(60)
+                        }
+                        .pickerStyle(.segmented)
+                        .disabled(model.isStreaming)
+                    }
                 }
+            }
+
+            GroupBox("Sonido") {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Para oír en la TV, elige «ScreenMirror TV» en la salida de sonido del Mac.")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             if let error = model.errorText {

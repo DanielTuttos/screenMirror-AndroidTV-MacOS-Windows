@@ -1,74 +1,39 @@
-import AVFoundation
-import CoreMedia
+import AudioToolbox
 import Foundation
 
-/// Convierte los buffers de audio de ScreenCaptureKit a **PCM s16le intercalado**, el formato
-/// que fija `docs/protocol.md` para `POST /audio`.
+/// Convierte un `AudioBufferList` (Float32 o Int16, intercalado o no) a **PCM s16le
+/// intercalado**, el formato que fija `docs/protocol.md` para `POST /audio`.
 ///
-/// SCK entrega LPCM (normalmente Float32, mono o estéreo, a veces desintercalado): aquí se
-/// normaliza todo a 16 bits con signo y canales intercalados, que es lo mínimo que entiende
-/// el `AudioTrack` del receptor sin añadir dependencias ni codificación.
+/// Es lo mínimo que entiende el `AudioTrack` del receptor sin añadir codificación.
 final class PCMAudioConverter {
 
     /// Devuelve `nil` si el formato no es PCM o no hay muestras: el caller descarta (no se traga errores).
-    func convert(_ sampleBuffer: CMSampleBuffer) -> Data? {
-        guard
-            let format = CMSampleBufferGetFormatDescription(sampleBuffer),
-            let asbdPointer = CMAudioFormatDescriptionGetStreamBasicDescription(format)
-        else { return nil }
-
-        let asbd = asbdPointer.pointee
+    func convert(bufferList list: UnsafeMutablePointer<AudioBufferList>, format asbd: AudioStreamBasicDescription) -> Data? {
         guard asbd.mFormatID == kAudioFormatLinearPCM else { return nil }
-
-        var blockBuffer: CMBlockBuffer?
-        // Espacio para hasta 2 buffers (mono/estéreo): SCK puede desinterlear y
-        // AudioBufferList es un array flexible, así que reservamos en el heap.
-        let listSize = MemoryLayout<AudioBufferList>.size + MemoryLayout<AudioBuffer>.size
-        let storage = UnsafeMutableRawPointer.allocate(byteCount: listSize, alignment: MemoryLayout<AudioBufferList>.alignment)
-        defer { storage.deallocate() }
-        let list = storage.assumingMemoryBound(to: AudioBufferList.self)
-        list.pointee.mNumberBuffers = 0
-        list.pointee.mBuffers = AudioBuffer(mNumberChannels: 0, mDataByteSize: 0, mData: nil)
-        let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
-            sampleBuffer,
-            bufferListSizeNeededOut: nil,
-            bufferListOut: list,
-            bufferListSize: listSize,
-            blockBufferAllocator: nil,
-            blockBufferMemoryAllocator: nil,
-            flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
-            blockBufferOut: &blockBuffer,
-        )
-        guard status == noErr, let blockBuffer else { return nil }
 
         let isFloat = (asbd.mFormatFlags & kAudioFormatFlagIsFloat) != 0
         let isSigned = (asbd.mFormatFlags & kAudioFormatFlagIsSignedInteger) != 0
         let isBigEndian = (asbd.mFormatFlags & kAudioFormatFlagIsBigEndian) != 0
-        let bitsPerChannel = Int(asbd.mBitsPerChannel)
-        guard isFloat || (isSigned && bitsPerChannel == 16) else { return nil }
+        guard isFloat || (isSigned && asbd.mBitsPerChannel == 16) else { return nil }
 
         let channels = Int(asbd.mChannelsPerFrame)
-        guard channels >= 1 else { return nil }
+        guard channels >= 1, asbd.mBytesPerFrame > 0 else { return nil }
 
-        // Los buffers llegan en AudioBufferList: mono/estéreo suele ser 1 buffer intercalado;
-        // formatos desintercalados traen un buffer por canal.
+        // Mono/estéreo suele ser 1 buffer intercalado; los desintercalados traen un buffer por canal.
         let bufferCount = Int(list.pointee.mNumberBuffers)
         guard bufferCount >= 1 else { return nil }
 
         let first = list.pointee.mBuffers
         guard let data = first.mData else { return nil }
-        let rawBytes = data.bindMemory(to: UInt8.self, capacity: Int(first.mDataByteSize))
-        let frames = Int(first.mDataByteSize) / max(1, Int(asbd.mBytesPerFrame))
+        let frames = Int(first.mDataByteSize) / Int(asbd.mBytesPerFrame)
+        guard frames > 0 else { return nil }
 
         var out = Data(capacity: frames * channels * 2)
-
         if bufferCount == 1, channels <= 2 {
-            appendInterleaved(rawBytes, frames: frames, channels: channels, isFloat: isFloat, isBigEndian: isBigEndian, into: &out)
+            appendInterleaved(data, frames: frames, channels: channels, isFloat: isFloat, isBigEndian: isBigEndian, into: &out)
         } else {
             appendDeinterleaved(list, frames: frames, channels: channels, isFloat: isFloat, isBigEndian: isBigEndian, into: &out)
         }
-
-        // blockBuffer se libera al salir de ámbito; lo retenemos arriba a propósito.
         return out
     }
 

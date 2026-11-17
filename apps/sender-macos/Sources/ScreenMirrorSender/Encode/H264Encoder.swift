@@ -92,6 +92,7 @@ final class H264Encoder {
             (kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, 2.0 as CFNumber),
             (kVTCompressionPropertyKey_AverageBitRate, bitrate as CFNumber),
             (kVTCompressionPropertyKey_ExpectedFrameRate, config.fps as CFNumber),
+            (kVTCompressionPropertyKey_DataRateLimits, [bitrate * 3 / 2 / 8, 1] as CFArray),
         ]
         for (key, value) in properties {
             let status = VTSessionSetProperty(session, key: key, value: value)

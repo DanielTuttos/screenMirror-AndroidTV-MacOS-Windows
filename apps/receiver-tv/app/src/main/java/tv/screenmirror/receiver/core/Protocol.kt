@@ -20,8 +20,8 @@ object Protocol {
     const val CONTENT_TYPE_ANNEXB = "video/avc; annexb"
     const val CONTENT_TYPE_PCM = "audio/pcm"
 
-    const val DEFAULT_FPS = 30
-    const val DEFAULT_KEYINT = 60
+    const val DEFAULT_FPS = 60
+    const val DEFAULT_KEYINT = 120
     const val DEFAULT_BITRATE_KBPS = 8_000
 
     const val DEFAULT_SAMPLE_RATE = 48000

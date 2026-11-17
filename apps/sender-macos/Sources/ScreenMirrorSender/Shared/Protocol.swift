@@ -17,8 +17,8 @@ enum Protocol {
     static let contentTypeAnnexB = "video/avc; annexb"
     static let contentTypePcm = "audio/pcm"
 
-    static let defaultFps = 30
-    static let defaultKeyint = 60
+    static let defaultFps = 60
+    static let defaultKeyint = 120
     static let defaultBitrateKbps = 8_000
 
     static let defaultSampleRate = 48000
