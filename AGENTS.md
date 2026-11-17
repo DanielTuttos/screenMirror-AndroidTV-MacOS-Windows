@@ -30,14 +30,14 @@ Pilares:
 
 | Campo | Valor |
 |---|---|
-| Última actualización | 2026-11-16 |
-| Fase | **2 — Descubrimiento + emisor macOS: 🟡 EN CURSO** (mDNS, audio, reconexión y pantalla virtual propia completos y validados en TV; queda la GUI del menú de barra) |
-| Siguiente paso | **Ver visualmente la GUI con el nuevo botón "pantalla virtual" (cambios SIN commitear, ver `HANDOFF.md` §4)** → commit → token en Keychain → `sender-windows` |
+| Última actualización | 2026-11-17 |
+| Fase | **2 — Descubrimiento + emisor macOS: 🟡 EN CURSO** (mDNS, audio, reconexión, pantalla virtual propia, GUI con toggle de pantalla virtual y token en Keychain; falta probar el toggle de la GUI a mano) |
+| Siguiente paso | Probar a mano el toggle de la GUI y el flujo con token guardado (cerrar y reabrir la app sin re-emparejar) → `sender-windows` |
 | `apps/receiver-tv` | 🟢 compila · **40 tests en verde** · **validado en TV real** (Riviera 55" TPQ10, `192.168.10.63`, Android 14, MediaTek) · anuncia `_screenmirror._tcp` · id de dispositivo permanente · **tokens persistidos en SharedPreferences** (sobreviven a muerte del proceso) |
-| `apps/sender-macos` | 🟢 compila · **19 tests en verde** · **E2E en TV real**: `--discover` (mDNS) → PIN → vídeo **2560×1440@30fps** + **audio PCM** (`--no-audio` para desactivar) · **pantalla virtual propia** `--virtual [WxH]` (sin BetterDisplay, desinstalado) · **reconexión** con backoff 0.5→5 s + cambio de resolución en caliente re-emitiendo · CLI completa · **GUI: toggle "pantalla virtual" añadido sin commitear, falta verificación visual** (ver `HANDOFF.md`) |
+| `apps/sender-macos` | 🟢 compila · **23 tests en verde** · **E2E en TV real**: `--discover` (mDNS) → PIN → vídeo **2560×1440@30fps** + **audio PCM** (`--no-audio` para desactivar) · **pantalla virtual propia** `--virtual [WxH]` (revalidada 2026-11-17) · **reconexión** con backoff 0.5→5 s + cambio de resolución en caliente · CLI completa · **GUI** de menú de barra con lista de TVs, PIN, displays y toggle de pantalla virtual (commit `826ea54`; toggle sin probar a mano) · **token por TV en Keychain** (`KeychainTokenStore`; se carga al elegir TV, se borra si la TV responde 401) |
 | `apps/sender-windows` | ⚪ no iniciado |
-| Bloqueos | — |
-| Último aprendido | `CGDisplayRegisterReconfigurationCallback` **no se propaga entre procesos**: los cambios de resolución hechos por otros nunca llegan al callback → `DisplayWatcher` combina callback (cambios propios) + polling de `CGDisplayBounds` cada 2 s. Y `CGDisplaySetDisplayMode` revierte al salir el proceso que lo aplica. |
+| Bloqueos | `osascript` sin permiso de accesibilidad: no se puede automatizar la GUI para verla; hay que probarla a mano |
+| Último aprendido | Los tokens del receptor caducan a las 24 h: con un token viejo el emisor falla con `unauthorized`, y el PIN vigente se lee de la pantalla de la TV (`adb exec-out screencap`). `git` y `swift` necesitan salir del sandbox del agente (escriben en `.git` y en la caché de módulos). |
 
 ---
 

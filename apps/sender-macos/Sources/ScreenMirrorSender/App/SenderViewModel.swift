@@ -22,8 +22,10 @@ final class SenderViewModel: ObservableObject {
     private let receiverClient = ReceiverClient()
     private let session = StreamSession()
     private let browser = ReceiverBrowser()
+    private let tokenStore: TokenStore
 
-    init() {
+    init(tokenStore: TokenStore = KeychainTokenStore()) {
+        self.tokenStore = tokenStore
         // Los callbacks llegan desde las colas de captura y de red: la UI solo se
         // toca en el hilo principal.
         browser.onUpdate = { [weak self] list in
@@ -139,18 +141,36 @@ final class SenderViewModel: ObservableObject {
     /// Elige una TV de la lista descubierta y consulta su estado.
     func select(_ receiver: DiscoveredReceiver) {
         host = receiver.host
-        token = nil // El token es de una sesión concreta: al cambiar de TV hay que emparejar de nuevo.
+        loadStoredToken()
         fetchStatus()
+    }
+
+    /// Recupera el token guardado de esta TV (nil si nunca se emparejó). Si ya
+    /// caducó, el primer intento de emitir lo descarta y pide el PIN de nuevo.
+    func loadStoredToken() {
+        token = tokenStore.token(forHost: host)
     }
 
     func pair() {
         Task {
             do {
-                token = try await receiverClient.pair(host: host, pin: pin)
+                let newToken = try await receiverClient.pair(host: host, pin: pin)
+                token = newToken
                 errorText = nil
+                try tokenStore.save(token: newToken, forHost: host)
             } catch {
                 errorText = error.localizedDescription
             }
+        }
+    }
+
+    /// Token caducado o revocado: se borra para que la UI vuelva a pedir el PIN.
+    private func discardToken() {
+        token = nil
+        do {
+            try tokenStore.removeToken(forHost: host)
+        } catch {
+            errorText = error.localizedDescription
         }
     }
 
@@ -176,6 +196,7 @@ final class SenderViewModel: ObservableObject {
                 try await session.start(host: host, token: token, displayID: displayID)
             } catch {
                 errorText = error.localizedDescription
+                if error as? SenderError == .unauthorized { discardToken() }
             }
         }
     }

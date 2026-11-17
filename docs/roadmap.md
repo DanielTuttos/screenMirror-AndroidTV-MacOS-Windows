@@ -41,7 +41,7 @@ Objetivo: validar **antes de invertir más** que la latencia es aceptable.
 - [x] **Audio al TV** (ADR-008): `POST /audio` con PCM s16le 48 kHz · emisor `SCStream(capturesAudio)` · receptor `AudioTrack` → **validado E2E en la TV real** (25 s, 1,24 M muestras, sonido escuchado). Pendiente solo `sender-windows`
 - [x] **Reconexión automática y cambio de resolución/orientación** (ADR-009): backoff 0.5→5 s + tokens persistidos + `DisplayWatcher` (callback CG + polling 2 s) → **validado E2E en la TV real**: receptor matado/relanzado reconectó sin re-parear; cambio 1440p→1080p→1440p re-emitió en cada paso
 - [x] GUI del emisor (menú de barra): lista de TVs descubiertas + PIN + displays + toggle "pantalla virtual". El flujo de pantalla virtual está validado E2E por CLI; el toggle en sí falta probarlo a mano
-- [ ] Token de sesión en Keychain (hoy solo vive en memoria/CLI)
+- [x] Token de sesión en Keychain (`KeychainTokenStore`, un token por TV; se descarta si la TV responde 401)
 
 **Criterio de éxito**: abrir el emisor en el Mac → aparece la TV → PIN → espejo funcionando. Y con una 2ª pantalla disponible → extender.
 

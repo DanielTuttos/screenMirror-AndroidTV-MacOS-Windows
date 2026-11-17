@@ -43,7 +43,10 @@ struct SenderView: View {
                     HStack {
                         TextField("IP de la TV", text: $model.host)
                             .textFieldStyle(.roundedBorder)
-                        Button("Buscar") { model.fetchStatus() }
+                        Button("Buscar") {
+                            model.loadStoredToken()
+                            model.fetchStatus()
+                        }
                     }
                     if let name = model.receiverName {
                         Text("\(name) · máximo \(model.maxResolution ?? "")")
