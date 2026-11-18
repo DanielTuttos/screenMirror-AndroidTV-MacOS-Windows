@@ -1,41 +1,61 @@
 # 🍎 apps/sender-macos — Emisor para macOS
 
-**Estado**: ⚪ no iniciado · **Lenguaje**: Swift · **mín. macOS 13**
+**Estado**: 🟢 completo / pulido · **Lenguaje**: Swift · **mín. macOS 14.2**
 
-Captura la pantalla del Mac, codifica en hardware y la envía a la TV por el protocolo de `docs/protocol.md`.
+Captura la pantalla del Mac, codifica en hardware (VideoToolbox) y la envía a la TV por el protocolo de `docs/protocol.md`.
 
 ## Stack
 
-- **ScreenCaptureKit** (captura, macOS 12.3+) → `CVPixelBuffer`
-- **VideoToolbox** (H.264 HW, zerolatency, keyint 60)
-- **Network.framework / URLSession** (transporte HTTP)
-- SwiftUI en **menú de barra** (sin Dock): lista de TVs detectadas, conectar, ajustes
-- Emparejamiento con PIN → token guardado en **Keychain**
+- **ScreenCaptureKit** (captura) → `CVPixelBuffer`
+- **VideoToolbox** (H.264 HW, zerolatency, rate limits contra picos de red, 30 / 60 fps)
+- **Core Audio Tap** + Driver propio HAL (`ScreenMirrorAudio.driver`) para audio condicional
+- **Network.framework** (transporte HTTP chunked sin buffer innecesario)
+- SwiftUI en **menú de barra** (sin Dock): lista de TVs detectadas, PIN, selector de pantalla/resolución/fluidez
+- Emparejamiento con PIN → token guardado en **Keychain** (`KeychainTokenStore`)
+- Pantalla virtual propia con shim `CGVirtualDisplay*` (modo extender sin hardware extra)
 
 ## Pipeline
 
 ```
-ScreenCaptureKit → VideoToolbox (H.264 HW) → POST /stream (chunked) → TV
+ScreenCaptureKit → VideoToolbox (H.264 HW) ──┐
+                                             ├─▶ HTTP chunked ──▶ TV Android
+SystemAudioTap (Core Audio) ─────────────────┘
 ```
 
-Sin disco, sin buffers intermedios grandes. Bitrate configurable (default 8 Mbps, 1080p30).
-
-## Estructura prevista
+## Estructura
 
 ```
 ScreenMirrorSender/
-├── App/          # SwiftUI menú de barra
-├── Domain/       # Device, Session, StreamConfig, StreamError (puros)
-├── Capture/      # ScreenCaptureHandler
+├── App/          # SenderApp (MenuBarExtra), SenderView, SenderViewModel
+├── CLI/          # CLIStreamer (soporte de línea de comandos para tests y headless)
+├── Domain/       # TokenStore, DiscoveredReceiver, DisplayDescriptor, StreamConfig, SenderError
+├── Capture/      # ScreenCaptureHandler, VirtualDisplay, SystemAudioTap, PCMAudioConverter, DisplayWatcher
 ├── Encode/       # H264Encoder (VideoToolbox)
-├── Transport/    # StreamClient + DiscoveryClient (mDNS)
-├── Pairing/      # PIN → token (Keychain)
+├── Storage/      # KeychainTokenStore, AudioDriverConnection
+├── Transport/    # StreamClient, ReceiverClient, ReceiverBrowser (mDNS)
+├── Session/      # StreamSession (reconexión automática con backoff), ReconnectPolicy
+├── Resources/    # Info.plist, AppIcon.icns
 └── Shared/       # Protocol.swift
 ```
 
-## Pendiente
+## Empaquetado y Distribución (.app y .dmg)
 
-- [ ] Proyecto Xcode (o Tuist/Swift Package)
-- [ ] Captura + codificación + `POST /stream`
-- [ ] Descubrimiento mDNS + PIN
-- [ ] Arranque automático al iniciar sesión (opcional)
+Para generar la aplicación ejecutable `ScreenMirror.app` y el instalador `ScreenMirror-Installer.dmg`:
+
+```bash
+# Desde la raíz del repositorio:
+./scripts/package-mac-dmg.sh
+```
+
+El script se encarga de:
+1. Compilar el proyecto en modo **Release** (`swift build -c release`).
+2. Crear la estructura del bundle `ScreenMirror.app` con su `Info.plist` e icono `AppIcon.icns`.
+3. Firmar el bundle ad-hoc con `codesign`.
+4. Generar el archivo `dist/ScreenMirror-Installer.dmg` con enlace a `/Applications` mediante `hdiutil`.
+
+Resultado generado en:
+```
+dist/
+├── ScreenMirror.app
+└── ScreenMirror-Installer.dmg
+```

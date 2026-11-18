@@ -36,6 +36,23 @@ Sin servidores: ambos extremos hablan directamente en tu red local.
 - **DRM** (Netflix, etc.): se ve en negro, igual que en cualquier app de esta categoría.
 - Latencia realista: **150–400 ms** en Wi-Fi 5 GHz.
 
+## Construcción y Empaquetado
+
+### Emisor macOS (`.dmg`)
+Para empaquetar la app de macOS en `ScreenMirror.app` y generar su instalador `ScreenMirror-Installer.dmg`:
+```bash
+./scripts/package-mac-dmg.sh
+```
+El archivo queda en `dist/ScreenMirror-Installer.dmg`.
+
+### Receptor Android TV (`.apk`)
+Para compilar e instalar el APK de depuración en la TV mediante ADB:
+```bash
+cd apps/receiver-tv
+./gradlew assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
 ## Estado actual
 
 Fase **0 — Infraestructura** completada. Siguiente: scaffold del receptor y prueba de latencia. Detalle en [`AGENTS.md` §2](AGENTS.md).
