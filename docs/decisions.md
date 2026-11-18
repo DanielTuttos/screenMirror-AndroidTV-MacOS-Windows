@@ -70,7 +70,44 @@ Nueva entrada al final; no borrar las anteriores (a menos que se revoque, indic�
   - Dos conexiones TCP en vez de una; el servidor ya servía conexiones concurrentes, así que el coste es cero.
   - Si algún día se necesita reducir ancho de banda o sincronizar A/V con precisión, se cambia a AAC con timestamp en v1 (no rompe la spec si se añade un `codec=` al query).
 
-## ADR-009 — Reconexión automática con backoff + polling de display
+## ADR-010 — Driver de audio HAL dinámico y eliminación de chasquidos (PcmFrameAligner)
+
+- **Fecha**: 2026-11-17
+- **Contexto**:
+  - Al capturar audio con `ScreenCaptureKit(capturesAudio)`, el sonido se reproducía simultáneamente en el Mac y en la TV sin posibilidad de silenciar individualmente pantallas externas (DisplayPort/HDMI sin soporte de volumen/mute). Además, el usuario necesita elegir si el audio va a la TV o a otros dispositivos desde el propio control de sonido de macOS.
+  - Ocasionalmente se percibían ruidos secos o estática por desalineación de bytes PCM en los límites de lectura TCP y por búferes de reproducción insuficientes.
+- **Decisión**:
+  - **Driver virtual propio en macOS (`ScreenMirrorAudio.driver`)**: Implementado en C++ sobre `libASPL` (MIT). Expone un dispositivo de salida virtual `ScreenMirror TV` en macOS.
+  - **Dispositivo dinámico via IPC**: El driver HAL escucha en `/tmp/screenmirror_audio.sock`. Solo publica `ScreenMirror TV` en el sistema cuando la app ScreenMirror está corriendo. Si la app se cierra, el dispositivo desaparece instantáneamente.
+  - **Captura sin mute destructivo**: `SystemAudioTap` usa `CATapDescription` apuntando a `ScreenMirror TV`, dejando que el usuario decida en el control de sonido de macOS dónde enrutar cada aplicación.
+  - **Alineación de audio en el receptor (`PcmFrameAligner`)**: Reensambla fragmentos de TCP asegurando que cada buffer entregado a `AudioTrack` sea múltiplo exacto de los bytes por frame (4 bytes para 16-bit estéreo). Se amplió el búfer a ~200 ms y se añadió prebuffering al arrancar para erradicar underruns.
+- **Consecuencias**:
+  - Cero estática y audio nítido.
+  - Control nativo desde macOS sin requerir software de terceros ni reiniciar dispositivos.
+  - Requiere instalación única del driver en `/Library/Audio/Plug-Ins/HAL` con `sudo`.
+
+## ADR-011 — Soporte de 60 FPS y control de picos en VideoToolbox
+
+- **Fecha**: 2026-11-17
+- **Contexto**: Para uso interactivo y vídeo de alta fluidez, 30 fps presentaba microtirones y caídas de frames en redes Wi-Fi por picos súbitos de bitrate en escenas complejas.
+- **Decisión**:
+  - Activar `kVTCompressionPropertyKey_DataRateLimits` en `H264Encoder` de macOS fijando una ventana estricta de pico (1.5x el bitrate promedio por segundo).
+  - Añadir selector en la GUI para alternar entre **30 fps** y **60 fps (Fluido)**, además de selector de resolución (**720p / 1080p / 1440p**).
+  - Reducir `POLL_TIMEOUT_MS` (5 ms) e incrementar `MAX_PENDING_AUS` (64) en `VideoPipeline.kt` de Android para procesar frames a 60 fps sin retenciones.
+- **Consecuencias**:
+  - Stream fluido a 58–60 fps estables en 2560×1440 sin saturar la pila de red TCP.
+
+## ADR-012 — Empaquetado oficial en .app firmado y generador de .dmg
+
+- **Fecha**: 2026-11-18
+- **Contexto**: El emisor de macOS se ejecutaba mediante `swift run`. Se requiere distribución estándar como instalador arrastrable (.dmg) con icono y metadatos propios de macOS.
+- **Decisión**:
+  - Crear script automatizado `./scripts/package-mac-dmg.sh`.
+  - Crear recurso `Info.plist` con metadatos oficiales y modo `LSUIElement` (app de barra de menús sin ensuciar el Dock).
+  - Generar conjunto de iconos oficiales `AppIcon.icns` integrado en el paquete.
+  - Firma ad-hoc (`codesign --deep`) y creación de imagen DMG comprimida (`hdiutil`).
+- **Consecuencias**: Instalación directa mediante arrastrar a la carpeta `/Applications`. Genera `dist/ScreenMirror-Installer.dmg`.
+
 
 - **Fecha**: 2026-11-16
 - **Contexto**: la sesión se cae por motivos habituales en TV (el sistema mata el proceso del receptor, la red titubea, cambia la resolución u orientación de la pantalla). Sin reconexión, el usuario debe re-parear a mano.

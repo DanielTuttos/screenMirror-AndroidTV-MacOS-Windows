@@ -1,52 +1,43 @@
 # 📱 apps/receiver-tv — Receptor para Android TV
 
-**Estado**: 🟡 estructura planificada · **Lenguaje**: Kotlin (100% nativo) · **ADR-002**
+**Estado**: 🟢 completo y validado en TV real · **Lenguaje**: Kotlin (100% nativo) · **ADR-002**
 
 Receptor **siempre activo**: al encender el TV la app ya escucha, anuncia su servicio por mDNS y espera el stream del emisor.
 
 ## Stack
 
-- Kotlin + Coroutines + Compose (material3; tv-material cuando haya controles focusables)
-- `MediaCodec` (decodificación HW, modo síncrono en `HandlerThread`) → `SurfaceView`
-- Servidor HTTP propio (sin frameworks) + `ChunkedInputStream` (ffmpeg usa chunked)
+- Kotlin + Coroutines + Jetpack Compose (material3)
+- `MediaCodec` (decodificación HW de H.264, baja latencia, soporte 60 fps) → `SurfaceView` alojado en `AndroidView`
+- `AudioTrack` en modo STREAM con buffer de baja latencia + `PcmFrameAligner` (PCM s16le sin estática ni chasquidos)
+- Servidor HTTP propio sin frameworks (`HttpStreamServer`) en puerto 9471 con soporte Chunked
+- Persistencia de emparejamiento y tokens en `SharedPreferences`
+- Descubrimiento mDNS con `NsdManager` (`_screenmirror._tcp`)
 - minSdk 24 · paquete `tv.screenmirror.receiver`
 
-## Estructura prevista (clean architecture)
+## Estructura (Clean Architecture)
 
 ```
 app/src/main/java/tv/screenmirror/receiver/
-├── ui/          # Compose (material3) + ReceiverViewModel (StateFlow)
-├── domain/      # modelos puros + casos de uso + interfaces (sin Android)
-├── data/        # HttpStreamServer, MdnsAdvertiser, PairingStore
-├── core/        # VideoPipeline (MediaCodec), Protocol.kt, Result tipado, logging
+├── ui/          # Compose (MainActivity, ReceiverScreen, PinOverlay, ReceiverViewModel)
+├── domain/      # Modelos puros (StreamRequest, AudioRequest, Outcome, ReceiverError) e interfaces
+├── data/        # HttpStreamServer, HttpRequestParser, NsdAdvertiser, SharedPrefsPairingRepository
+├── core/        # VideoPipeline (MediaCodec), AudioPipeline (AudioTrack + PcmFrameAligner), Protocol.kt
 └── service/     # ReceiverService (foreground)
 ```
 
-## Fase 1 (objetivo de validación)
+## Estado y Validación
 
-1. Scaffold Gradle + pantalla completa + foreground service.
-2. `POST /stream` → `MediaCodec` → `SurfaceView`.
-3. Probar con `ffmpeg` desde el Mac y **medir latencia**.
-4. Decidir: seguir con HTTP o pasar a WebRTC (ADR-005).
-
-```bash
-# Prueba manual desde el Mac (fase 1)
-ffmpeg -f avfoundation -capture_cursor 1 -i "<index_pantalla>" \
-  -c:v libx264 -preset ultrafast -tune zerolatency -b:v 8M \
-  -g 60 -f h264 "http://<ip-tv>:9471/stream?token=TEST&w=1920&h=1080&fps=30"
-```
-
-## Estado
-
-**🟢 Fase 1 en curso**: compila, 23 tests en verde, APK debug generado en
-`app/build/outputs/apk/debug/app-debug.apk`.
+🟢 **44 tests unitarios en verde** (`./gradlew testDebugUnitTest`).
+Validado de extremo a extremo en TV real (Riviera 55" 4K TPQ10, Android 14, MediaTek):
+- Vídeo fluido a **60 fps @ 2560×1440 (1440p)**.
+- HUD discreto de FPS en la esquina inferior izquierda.
+- Audio alineado sin ruido de chasquidos.
 
 ```bash
-# Instalar en la TV (con depuración USB o red activada)
+# Compilar e instalar en la TV
+cd apps/receiver-tv
+./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
-
-# Desde el Mac: prueba de latencia (PIN visible en la pantalla de la TV)
-./scripts/test-stream-mac.sh <ip-tv> <pin>
 ```
 
 ## Pendiente

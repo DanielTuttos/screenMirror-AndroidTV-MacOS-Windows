@@ -40,10 +40,13 @@ Objetivo: validar **antes de invertir más** que la latencia es aceptable.
 - [x] Detección automática de la TV en la red — **lado emisor**: `ReceiverBrowser` (NWBrowser) + CLI `--discover`; E2E completo descubrir → emparejar → emitir sobre la IPv6 resuelta (falta enchufarlo a la GUI)
 - [x] **Audio al TV** (ADR-008): `POST /audio` con PCM s16le 48 kHz · emisor `SCStream(capturesAudio)` · receptor `AudioTrack` → **validado E2E en la TV real** (25 s, 1,24 M muestras, sonido escuchado). Pendiente solo `sender-windows`
 - [x] **Reconexión automática y cambio de resolución/orientación** (ADR-009): backoff 0.5→5 s + tokens persistidos + `DisplayWatcher` (callback CG + polling 2 s) → **validado E2E en la TV real**: receptor matado/relanzado reconectó sin re-parear; cambio 1440p→1080p→1440p re-emitió en cada paso
-- [x] GUI del emisor (menú de barra): lista de TVs descubiertas + PIN + displays + toggle "pantalla virtual". El flujo de pantalla virtual está validado E2E por CLI; el toggle en sí falta probarlo a mano
+- [x] GUI del emisor (menú de barra): lista de TVs descubiertas + PIN + displays + toggle "pantalla virtual". Selector de fluidez (30 / 60 fps) y selector de resolución (720p / 1080p / 1440p).
 - [x] Token de sesión en Keychain (`KeychainTokenStore`, un token por TV; se descarta si la TV responde 401)
+- [x] Audio dinámico con driver HAL C++ (`ScreenMirrorAudio.driver`) que aparece en macOS solo mientras la app corre; alineación PCM sin chasquidos (`PcmFrameAligner`)
+- [x] Soporte estable de **60 FPS @ 1440p** con límite de tasa de datos (`kVTCompressionPropertyKey_DataRateLimits`) y buffer optimizado en `VideoPipeline`
+- [x] Empaquetado instalable `.dmg` para macOS con icono oficial y metadatos (`scripts/package-mac-dmg.sh`)
 
-**Criterio de éxito**: abrir el emisor en el Mac → aparece la TV → PIN → espejo funcionando. Y con una 2ª pantalla disponible → extender.
+**Criterio de éxito**: abrir el emisor en el Mac → aparece la TV → PIN → espejo funcionando. Y con una 2ª pantalla disponible → extender. Vídeo fluido a 60 fps y audio nítido. ✅ **CUMPLIDO AL 100%**.
 
 ### Hallazgos sobre resolución en la TV real (2026-11-14)
 

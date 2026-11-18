@@ -8,9 +8,9 @@ Suite de 3 apps para duplicar la pantalla de tu **Mac** o **Windows** hacia una 
 
 | App | Plataforma | Estado | Descripción |
 |---|---|---|---|
-| [`apps/receiver-tv`](apps/receiver-tv) | Android TV (Kotlin) | 🟡 planificada | Receptor: siempre activo, anuncia su servicio por mDNS, recibe H.264 y lo pinta a pantalla completa |
-| [`apps/sender-macos`](apps/sender-macos) | macOS (Swift) | ⚪ pendiente | Emisor: captura la pantalla, codifica en HW y la envía a la TV |
-| [`apps/sender-windows`](apps/sender-windows) | Windows (C#) | ⚪ pendiente | Emisor: ídem para Windows |
+| [`apps/receiver-tv`](apps/receiver-tv) | Android TV (Kotlin) | 🟢 completada | Receptor: siempre activo, anuncia su servicio por mDNS, recibe H.264/PCM a 60 fps y lo reproduce en pantalla completa |
+| [`apps/sender-macos`](apps/sender-macos) | macOS (Swift) | 🟢 completada | Emisor: menú de barra, captura con VideoToolbox (30/60 fps, hasta 1440p), audio con driver virtual propio, pantalla virtual |
+| [`apps/sender-windows`](apps/sender-windows) | Windows (C#) | ⚪ pendiente | Emisor: ídem para Windows (Fase 3: Windows.Graphics.Capture + NVENC) |
 
 ## Documentación
 
@@ -55,4 +55,4 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## Estado actual
 
-Fase **0 — Infraestructura** completada. Siguiente: scaffold del receptor y prueba de latencia. Detalle en [`AGENTS.md` §2](AGENTS.md).
+Fase **2 — Descubrimiento + emisor macOS** completada y pulida (stream a 60 fps @ 1440p, audio dinámico con driver HAL propio, pantalla virtual propia, empaquetado en `.dmg` y `.apk`). Siguiente: Fase 3 (`sender-windows`). Detalle en [`AGENTS.md` §2](AGENTS.md).
